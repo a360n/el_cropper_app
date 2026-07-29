@@ -6,7 +6,9 @@ def process_single_image(img: Image.Image) -> Image.Image:
     """
     Processes a single PIL Image according to the process_tif.py rules:
     - Ensures height is even (if height is odd, subtracts 1).
-    - Ensures width does not exceed target_max_width = new_height // 2 (crops to min(width, target_max_width)).
+    - Ensures width does not exceed target_max_width = new_height // 2.
+    - Applies equal, centered cropping from both left and right (and top and bottom)
+      so the solar panel active grid remains perfectly centered without distorting the right edge reflection.
     """
     width, height = img.size
 
@@ -15,7 +17,11 @@ def process_single_image(img: Image.Image) -> Image.Image:
     new_width = min(width, target_max_width)
 
     if new_width != width or new_height != height:
-        return img.crop((0, 0, new_width, new_height))
+        left = (width - new_width) // 2
+        top = (height - new_height) // 2
+        right = left + new_width
+        bottom = top + new_height
+        return img.crop((left, top, right, bottom))
     return img
 
 def process_tif_files(folder_path):
@@ -48,7 +54,7 @@ def process_tif_files(folder_path):
 
                             os.replace(temp_path, file_path)
                             modified_count += 1
-                            print(f"✅ [تم التعديل] {file_path}")
+                            print(f"✅ [تم التعديل المتناظر] {file_path}")
                             print(f"   القياس القديم: {width}x{height} ⬅️ القياس الجديد: {new_width}x{new_height}")
                         else:
                             print(f"ℹ️ [بدون تغيير] {file_path} (الأبعاد: {width}x{height})")
