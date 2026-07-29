@@ -6,22 +6,25 @@ def process_single_image(img: Image.Image) -> Image.Image:
     """
     Processes a single PIL Image according to the process_tif.py rules:
     - Ensures height is even (if height is odd, subtracts 1).
-    - Ensures width does not exceed target_max_width = new_height // 2.
-    - Applies equal, centered cropping from both left and right (and top and bottom)
-      so the solar panel active grid remains perfectly centered without distorting the right edge reflection.
+    - Preserves outer cell border of Column F even when camera has perspective tilt/skew
+      by adding an adaptive right-side safety tilt buffer (8% of cell width).
     """
     width, height = img.size
 
     new_height = height if height % 2 == 0 else height - 1
     target_max_width = new_height // 2
-    new_width = min(width, target_max_width)
+
+    # Adaptive tilt buffer (8% of base cell width) to protect Column F outer border from being sliced by camera tilt
+    base_ch = target_max_width / 6.0
+    tilt_buffer = int(round(0.08 * base_ch))
+    
+    if width > target_max_width:
+        new_width = min(width, target_max_width + tilt_buffer)
+    else:
+        new_width = width
 
     if new_width != width or new_height != height:
-        left = (width - new_width) // 2
-        top = (height - new_height) // 2
-        right = left + new_width
-        bottom = top + new_height
-        return img.crop((left, top, right, bottom))
+        return img.crop((0, 0, new_width, new_height))
     return img
 
 def process_tif_files(folder_path):
@@ -54,7 +57,7 @@ def process_tif_files(folder_path):
 
                             os.replace(temp_path, file_path)
                             modified_count += 1
-                            print(f"✅ [تم التعديل المتناظر] {file_path}")
+                            print(f"✅ [تم التعديل] {file_path}")
                             print(f"   القياس القديم: {width}x{height} ⬅️ القياس الجديد: {new_width}x{new_height}")
                         else:
                             print(f"ℹ️ [بدون تغيير] {file_path} (الأبعاد: {width}x{height})")
