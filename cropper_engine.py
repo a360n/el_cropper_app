@@ -5,27 +5,32 @@ import io
 import os
 from typing import Dict, Any, List, Tuple
 
+# Import the user's process_tif preprocessing function
+from process_tif import process_single_image
+
 class SolarPanelCropperEngine:
     """
     Solar Panel EL Image Cropper Engine
-    Implements the exact 7-step cropping algorithm with perfected 4-sided reflection padding:
+    Pipeline:
+    0. Passes input image through process_tif.py (process_single_image) first.
     1. Ensure even height.
     2. Aspect ratio correction (MH = 2 * MW) via equal cropping.
     3. Calculate CH = MW / 6, CW = MH / 24.
-    4. Add reflection padding on all 4 sides so top/bottom reflection perfectly matches left/right:
-       - pad_x = (SL - CH) / 2 = 0.15 * CH
-       - pad_y = (SL - CW) / 2 = 0.80 * CW (since SL = 1.3 * CH = 2.6 * CW)
-       - Padded dimensions: NMW = MW + 0.3 * CH, NMH = MH + 1.6 * CW.
-    5. Calculate square cell size SL = CH + 0.3*CH = 1.3*CH.
-    6. Extract 144 square cell patches (A1-F24) with complete, non-distorted reflection.
+    4. Add 4-sided reflection padding: pad_x = (SL - CH)/2, pad_y = (SL - CW)/2.
+    5. Calculate square cell size SL = 1.3 * CH.
+    6. Extract 144 square cell patches (A1-F24).
     7. Resize patches to 224x224 PNG.
     """
 
     @staticmethod
     def load_image(file_bytes: bytes) -> np.ndarray:
-        """Loads an image from raw bytes (supports TIF, PNG, JPG)."""
+        """Loads an image from raw bytes and passes it through process_tif.py first."""
         try:
             pil_img = Image.open(io.BytesIO(file_bytes))
+
+            # Step 0: Pre-process image via process_tif.py
+            pil_img = process_single_image(pil_img)
+
             if pil_img.mode != 'RGB':
                 pil_img = pil_img.convert('RGB')
             img_np = np.array(pil_img)
@@ -35,7 +40,11 @@ class SolarPanelCropperEngine:
             img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
             if img is None:
                 raise ValueError("Could not decode image bytes. Supported formats: TIF, PNG, JPG.")
-            return img
+            
+            # Convert OpenCV BGR -> PIL -> process_single_image -> OpenCV BGR
+            pil_img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+            pil_img = process_single_image(pil_img)
+            return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
 
     @classmethod
     def process_panel(cls, image_bgr: np.ndarray, target_cell_size: Tuple[int, int] = (224, 224)) -> Dict[str, Any]:
@@ -80,9 +89,6 @@ class SolarPanelCropperEngine:
         sl_px = int(round(sl_float))
 
         # Step 4: Perfected 4-sided reflection padding
-        # To make top & bottom reflection as ideal and complete as left & right:
-        # pad_x = (SL - CH) / 2 = 0.15 * CH
-        # pad_y = (SL - CW) / 2 = 0.80 * CW
         pad_x_float = (sl_float - ch) / 2.0
         pad_y_float = (sl_float - cw) / 2.0
 
@@ -183,7 +189,8 @@ class SolarPanelCropperEngine:
             "square_length_SL": sl_float,
             "square_length_px": sl_px,
             "total_cells": len(cells_dict),
-            "target_cell_size": f"{target_cell_size[0]}x{target_cell_size[1]}"
+            "target_cell_size": f"{target_cell_size[0]}x{target_cell_size[1]}",
+            "preprocessed_by_process_tif": True
         }
 
         return {
@@ -195,7 +202,7 @@ class SolarPanelCropperEngine:
         }
 
 if __name__ == "__main__":
-    print("Testing perfected SolarPanelCropperEngine...")
+    print("Testing CropperEngine with process_tif integration...")
     dummy = np.zeros((1000, 600, 3), dtype=np.uint8)
     res = SolarPanelCropperEngine.process_panel(dummy)
     print("Engine Test Success!")
