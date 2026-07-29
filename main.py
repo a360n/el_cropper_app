@@ -2,16 +2,17 @@ import os
 import io
 import uuid
 import zipfile
-from typing import Dict, Any
-from fastapi import FastAPI, UploadFile, File, HTTPException, Form
+from typing import Dict, Any, Optional
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form, BackgroundTasks
 from fastapi.responses import Response, FileResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from cropper_engine import SolarPanelCropperEngine
+from batch_cropper import process_batch_directory, find_panel_folders
 
-app = FastAPI(title="EL Solar Panel Cell Cropper API", version="1.0.0")
+app = FastAPI(title="EL Solar Panel Cell Cropper API", version="2.0.0")
 
-# Enable CORS for local development flexibility
+# Enable CORS for local desktop usage
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -20,19 +21,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-memory storage for active sessions
-# In production / local dev, holds the processed result dictionary keyed by session_id
 SESSION_CACHE: Dict[str, Dict[str, Any]] = {}
+BATCH_TASKS: Dict[str, Dict[str, Any]] = {}
 
-# Directory for saving exported cell folders
 EXPORT_BASE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "exported_cells")
 os.makedirs(EXPORT_BASE_DIR, exist_ok=True)
 
 @app.post("/api/upload")
 async def upload_panel_image(file: UploadFile = File(...)):
     """
-    Receives uploaded .tif, .png, or .jpg panel image.
-    Processes it through the 7-step cropping algorithm and caches the output.
+    Receives uploaded single panel image (.tif / .png / .jpg).
+    Passes it through process_tif.py & 7-step cropping algorithm and caches output.
     """
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file selected.")
@@ -48,7 +47,6 @@ async def upload_panel_image(file: UploadFile = File(...)):
             "result": result
         }
 
-        # Prepare cell overview metadata for frontend (without heavy binary payload)
         cell_summary = []
         for cell_id, cell_data in result["cells"].items():
             cell_summary.append({
@@ -70,6 +68,41 @@ async def upload_panel_image(file: UploadFile = File(...)):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Image processing error: {str(e)}")
+
+@app.post("/api/batch-process")
+async def batch_process_folder(folder_path: str = Form(...)):
+    """
+    Processes an entire local root folder containing Good_models / bad_models.
+    Finds all panel folders inside, crops each panel's .tif image, and creates
+    an 'all cell' folder alongside the .tif and .el files containing the 144 PNGs.
+    """
+    folder_path = folder_path.strip('"\'')
+    if not os.path.exists(folder_path):
+        raise HTTPException(status_code=404, detail=f"المجلد غير موجود: {folder_path}")
+
+    try:
+        results = process_batch_directory(folder_path)
+        return JSONResponse({
+            "status": "success",
+            "message": f"تمت معالجة {results['success_count']} لوح من إجمالي {results['total_panels']} بنجاح.",
+            "results": results
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"خطأ أثناء معالجة الدفعة: {str(e)}")
+
+@app.get("/api/scan-folder")
+async def scan_folder_info(folder_path: str):
+    """Scans a local folder and returns the count and list of panel folders discovered."""
+    folder_path = folder_path.strip('"\'')
+    if not os.path.exists(folder_path):
+        raise HTTPException(status_code=404, detail=f"المجلد غير موجود: {folder_path}")
+
+    panels = find_panel_folders(folder_path)
+    return JSONResponse({
+        "folder_path": folder_path,
+        "total_panels": len(panels),
+        "panels": panels
+    })
 
 @app.get("/api/panel-image/{session_id}")
 async def get_panel_image(session_id: str):
@@ -144,12 +177,11 @@ async def export_to_folder(session_id: str, custom_path: str = Form(None)):
 
     return JSONResponse({
         "status": "success",
-        "message": f"Successfully exported {saved_count} cells to directory.",
+        "message": f"تم حفظ {saved_count} خلية بنجاح.",
         "target_directory": target_dir,
         "saved_count": saved_count
     })
 
-# Mount static web directory
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 os.makedirs(STATIC_DIR, exist_ok=True)
 
@@ -157,8 +189,7 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 @app.get("/")
 async def read_index():
-    """Serves the main web UI page."""
     index_file = os.path.join(STATIC_DIR, "index.html")
     if os.path.exists(index_file):
         return FileResponse(index_file)
-    return Response(content="<h1>EL Cell Cropper App</h1><p>Static index.html loading...</p>", media_type="text/html")
+    return Response(content="<h1>EL Cell Cropper App</h1>", media_type="text/html")

@@ -3,7 +3,14 @@
  */
 
 document.addEventListener('DOMContentLoaded', () => {
-    // DOM Elements
+    // Mode Switcher Elements
+    const tabSingleMode = document.getElementById('tab-single-mode');
+    const tabBatchMode = document.getElementById('tab-batch-mode');
+    const singleModeContainer = document.getElementById('single-mode-container');
+    const batchModeContainer = document.getElementById('batch-mode-container');
+    const btnHeaderUpload = document.getElementById('btn-header-upload');
+
+    // Single Mode Elements
     const fileInput = document.getElementById('file-input');
     const dropzoneCard = document.getElementById('dropzone-card');
     const dropzoneContainer = document.getElementById('dropzone-container');
@@ -11,7 +18,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadingOverlay = document.getElementById('loading-overlay');
     const loadingMsg = document.getElementById('loading-msg');
     
-    // Cell Inspector Elements
     const currentCellId = document.getElementById('current-cell-id');
     const currentCellCoords = document.getElementById('current-cell-coords');
     const cellPreviewImg = document.getElementById('cell-preview-img');
@@ -22,7 +28,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const matrixGrid = document.getElementById('matrix-grid');
     const cellCountBadge = document.getElementById('cell-count-badge');
 
-    // Stats Elements
+    const statProcessTif = document.getElementById('stat-process-tif');
     const statOrigDim = document.getElementById('stat-orig-dim');
     const statModelDim = document.getElementById('stat-model-dim');
     const statPaddedDim = document.getElementById('stat-padded-dim');
@@ -30,27 +36,54 @@ document.addEventListener('DOMContentLoaded', () => {
     const statCW = document.getElementById('stat-cw');
     const statSL = document.getElementById('stat-sl');
 
-    // Export Elements
     const btnExportZip = document.getElementById('btn-export-zip');
     const btnExportFolder = document.getElementById('btn-export-folder');
     const exportStatusMsg = document.getElementById('export-status-msg');
 
-    // Canvas & Panel Elements
     const fullPanelImg = document.getElementById('full-panel-img');
     const gridCanvas = document.getElementById('grid-canvas');
     const toggleGridOverlay = document.getElementById('toggle-grid-overlay');
     const togglePaddingHighlight = document.getElementById('toggle-padding-highlight');
-    const canvasWrapper = document.getElementById('canvas-wrapper');
+
+    // Batch Mode Elements
+    const batchFolderPath = document.getElementById('batch-folder-path');
+    const btnScanFolder = document.getElementById('btn-scan-folder');
+    const btnRunBatch = document.getElementById('btn-run-batch');
+    const batchSummaryCards = document.getElementById('batch-summary-cards');
+    const summaryTotalPanels = document.getElementById('summary-total-panels');
+    const summarySuccessPanels = document.getElementById('summary-success-panels');
+    const summaryErrorPanels = document.getElementById('summary-error-panels');
+    const batchLogSection = document.getElementById('batch-log-section');
+    const batchLogTbody = document.getElementById('batch-log-tbody');
 
     // State Variables
     let currentSessionId = null;
-    let currentCellList = []; // Array of cell objects [{id: 'A1', col: 'A', row: 1, ...}]
+    let currentCellList = [];
     let selectedCellIndex = 0;
     let gridOverlayData = [];
     let metadata = {};
 
     // ----------------------------------------------------
-    // Drag & Drop File Handlers
+    // Tab Mode Switcher
+    // ----------------------------------------------------
+    tabSingleMode.addEventListener('click', () => {
+        tabSingleMode.classList.add('active');
+        tabBatchMode.classList.remove('active');
+        singleModeContainer.style.display = 'flex';
+        batchModeContainer.style.display = 'none';
+        btnHeaderUpload.style.display = 'inline-flex';
+    });
+
+    tabBatchMode.addEventListener('click', () => {
+        tabBatchMode.classList.add('active');
+        tabSingleMode.classList.remove('active');
+        singleModeContainer.style.display = 'none';
+        batchModeContainer.style.display = 'flex';
+        btnHeaderUpload.style.display = 'none';
+    });
+
+    // ----------------------------------------------------
+    // Drag & Drop Single Upload Handlers
     // ----------------------------------------------------
     fileInput.addEventListener('change', (e) => {
         if (e.target.files.length > 0) {
@@ -81,11 +114,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // ----------------------------------------------------
-    // Upload Processing API Call
-    // ----------------------------------------------------
     async function handleFileUpload(file) {
-        showLoading("جاري تحليل وتقطيع اللوح حسب الخوارزمية...");
+        showLoading("جاري تمرير الصورة عبر process_tif.py وتقطيعها...");
         
         const formData = new FormData();
         formData.append('file', file);
@@ -107,7 +137,7 @@ document.addEventListener('DOMContentLoaded', () => {
             gridOverlayData = data.grid_overlay;
             currentCellList = generateOrderedCellList(data.cells);
 
-            // Populate Stats
+            statProcessTif.textContent = metadata.preprocessed_by_process_tif ? "نعم (مفعّل)" : "لا";
             statOrigDim.textContent = `${metadata.original_dimensions.width} × ${metadata.original_dimensions.height} px`;
             statModelDim.textContent = `${metadata.model_dimensions.width} × ${metadata.model_dimensions.height} px`;
             statPaddedDim.textContent = `${metadata.padded_dimensions.width} × ${metadata.padded_dimensions.height} px`;
@@ -116,24 +146,19 @@ document.addEventListener('DOMContentLoaded', () => {
             statSL.textContent = `${metadata.square_length_SL.toFixed(2)} px (${metadata.square_length_px} px)`;
             cellCountBadge.textContent = `${metadata.total_cells} خلية`;
 
-            // Build Matrix Grid & Dropdown
             buildMatrixGridUI();
             buildDropdownUI();
 
-            // Load Full Panel Image
             fullPanelImg.src = `/api/panel-image/${currentSessionId}`;
             fullPanelImg.onload = () => {
                 resizeCanvasToImage();
                 drawCanvasOverlay();
             };
 
-            // Switch view
             dropzoneContainer.style.display = 'none';
             workspaceSplit.style.display = 'flex';
 
-            // Select initial cell A1
             selectCellByIndex(0);
-
             hideLoading();
 
         } catch (err) {
@@ -142,9 +167,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Generates A1 to F24 ordered cell list
     function generateOrderedCellList(cellsSummary) {
-        // Map dictionary by ID
         const map = {};
         cellsSummary.forEach(c => map[c.id] = c);
 
@@ -159,9 +182,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return list;
     }
 
-    // ----------------------------------------------------
-    // UI Builders: Matrix Grid & Dropdown
-    // ----------------------------------------------------
     function buildMatrixGridUI() {
         matrixGrid.innerHTML = '';
         currentCellList.forEach((cell, idx) => {
@@ -188,22 +208,16 @@ document.addEventListener('DOMContentLoaded', () => {
         selectCellByIndex(parseInt(e.target.value));
     });
 
-    // ----------------------------------------------------
-    // Cell Selection Logic
-    // ----------------------------------------------------
     function selectCellByIndex(index) {
         if (index < 0 || index >= currentCellList.length) return;
         selectedCellIndex = index;
         const cell = currentCellList[selectedCellIndex];
 
-        // Update ID and Coords Labels
         currentCellId.textContent = cell.id;
         currentCellCoords.textContent = `العمود ${cell.col} | السطر ${cell.row} (${selectedCellIndex + 1} من 144)`;
 
-        // Update Dropdown selection
         cellSelectDropdown.value = selectedCellIndex;
 
-        // Highlight Matrix Grid Button
         const buttons = matrixGrid.querySelectorAll('.matrix-cell-btn');
         buttons.forEach((btn, idx) => {
             if (idx === selectedCellIndex) {
@@ -214,23 +228,20 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // Load 224x224 Cell Image
         cellLoader.style.display = 'flex';
         cellPreviewImg.src = `/api/cell-image/${currentSessionId}/${cell.id}`;
         cellPreviewImg.onload = () => {
             cellLoader.style.display = 'none';
         };
 
-        // Redraw Canvas to highlight selected cell box
         drawCanvasOverlay();
     }
 
-    // Navigation Buttons
     btnPrevCell.addEventListener('click', () => {
         if (selectedCellIndex > 0) {
             selectCellByIndex(selectedCellIndex - 1);
         } else {
-            selectCellByIndex(currentCellList.length - 1); // Wrap around
+            selectCellByIndex(currentCellList.length - 1);
         }
     });
 
@@ -238,13 +249,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (selectedCellIndex < currentCellList.length - 1) {
             selectCellByIndex(selectedCellIndex + 1);
         } else {
-            selectCellByIndex(0); // Wrap around
+            selectCellByIndex(0);
         }
     });
 
-    // Keyboard Navigation (Arrow Keys)
     document.addEventListener('keydown', (e) => {
-        if (workspaceSplit.style.display === 'none') return;
+        if (singleModeContainer.style.display === 'none' || workspaceSplit.style.display === 'none') return;
         if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
             btnPrevCell.click();
         } else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
@@ -252,9 +262,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // ----------------------------------------------------
-    // Canvas & Overlay Drawing
-    // ----------------------------------------------------
     function resizeCanvasToImage() {
         gridCanvas.width = fullPanelImg.naturalWidth;
         gridCanvas.height = fullPanelImg.naturalHeight;
@@ -280,19 +287,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const padX = metadata.padding.pad_x;
         const padY = metadata.padding.pad_y;
 
-        // 1. Draw 15% Padding Border Highlight (if enabled)
         if (togglePaddingHighlight.checked) {
-            ctx.fillStyle = 'rgba(239, 68, 68, 0.15)'; // Red tint for reflected padding
-            // Top padding bar
+            ctx.fillStyle = 'rgba(239, 68, 68, 0.15)';
             ctx.fillRect(0, 0, gridCanvas.width, padY);
-            // Bottom padding bar
             ctx.fillRect(0, gridCanvas.height - padY, gridCanvas.width, padY);
-            // Left padding bar
             ctx.fillRect(0, padY, padX, gridCanvas.height - 2 * padY);
-            // Right padding bar
             ctx.fillRect(gridCanvas.width - padX, padY, padX, gridCanvas.height - 2 * padY);
 
-            // Dash line around original unpadded board area
             ctx.strokeStyle = '#ef4444';
             ctx.lineWidth = 2;
             ctx.setLineDash([6, 6]);
@@ -300,7 +301,6 @@ document.addEventListener('DOMContentLoaded', () => {
             ctx.setLineDash([]);
         }
 
-        // 2. Draw Cell Grid Boxes (if enabled)
         if (toggleGridOverlay.checked && gridOverlayData.length > 0) {
             gridOverlayData.forEach((box) => {
                 ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
@@ -309,21 +309,17 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        // 3. Highlight currently selected cell box
         if (currentCellList.length > 0 && selectedCellIndex < currentCellList.length) {
             const activeCell = currentCellList[selectedCellIndex];
             const box = activeCell.bbox;
 
-            // Semi-transparent fill highlight
             ctx.fillStyle = 'rgba(6, 182, 212, 0.25)';
             ctx.fillRect(box.x, box.y, box.w, box.h);
 
-            // Glowing cyan border
             ctx.strokeStyle = '#06b6d4';
             ctx.lineWidth = 4;
             ctx.strokeRect(box.x, box.y, box.w, box.h);
 
-            // Cell ID Tag Box
             ctx.fillStyle = '#06b6d4';
             const tagW = 50;
             const tagH = 26;
@@ -337,7 +333,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Canvas Click Interaction: Clicking on any cell selects it
     gridCanvas.addEventListener('click', (e) => {
         const rect = gridCanvas.getBoundingClientRect();
         const scaleX = gridCanvas.width / rect.width;
@@ -346,7 +341,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const clickX = (e.clientX - rect.left) * scaleX;
         const clickY = (e.clientY - rect.top) * scaleY;
 
-        // Find cell containing click coordinates
         for (let i = 0; i < currentCellList.length; i++) {
             const cell = currentCellList[i];
             const b = cell.bbox;
@@ -357,9 +351,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // ----------------------------------------------------
-    // Export Handlers
-    // ----------------------------------------------------
     btnExportZip.addEventListener('click', () => {
         if (!currentSessionId) return;
         window.location.href = `/api/export/zip/${currentSessionId}`;
@@ -378,7 +369,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await response.json();
 
             if (response.ok) {
-                exportStatusMsg.textContent = `تم تم حفظ 144 خلية بنجاح في:\n${res.target_directory}`;
+                exportStatusMsg.textContent = `تم حفظ 144 خلية بنجاح في:\n${res.target_directory}`;
                 exportStatusMsg.style.color = "var(--accent-green)";
             } else {
                 throw new Error(res.detail || "فشل التصدير للمجلد");
@@ -389,7 +380,112 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Loading overlay helpers
+    // ----------------------------------------------------
+    // MODE 2: BATCH FOLDER PROCESSING LOGIC
+    // ----------------------------------------------------
+    btnScanFolder.addEventListener('click', async () => {
+        const path = batchFolderPath.value.trim();
+        if (!path) {
+            alert("يرجى إدخال مسار المجلد الرئيسي أولاً.");
+            return;
+        }
+
+        showLoading("جاري فحص مجلد الألواح...");
+
+        try {
+            const res = await fetch(`/api/scan-folder?folder_path=${encodeURIComponent(path)}`);
+            const data = await res.json();
+            hideLoading();
+
+            if (!res.ok) {
+                throw new Error(data.detail || "فشل فحص المجلد");
+            }
+
+            summaryTotalPanels.textContent = data.total_panels;
+            summarySuccessPanels.textContent = '0';
+            summaryErrorPanels.textContent = '0';
+            batchSummaryCards.style.display = 'grid';
+
+            batchLogTbody.innerHTML = '';
+            data.panels.forEach((p, idx) => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${idx + 1}</td>
+                    <td><strong>${p.panel_name}</strong></td>
+                    <td><span class="badge">${p.category}</span></td>
+                    <td><span class="text-secondary">بانتظار التقطيع</span></td>
+                    <td class="text-muted">${p.panel_dir}/all cell</td>
+                `;
+                batchLogTbody.appendChild(tr);
+            });
+            batchLogSection.style.display = 'flex';
+
+            alert(`تم فحص المجلد بنجاح العثور على ${data.total_panels} لوح شمسي جاهز للتقطيع.`);
+
+        } catch (err) {
+            hideLoading();
+            alert("خطأ أثناء فحص المجلد: " + err.message);
+        }
+    });
+
+    btnRunBatch.addEventListener('click', async () => {
+        const path = batchFolderPath.value.trim();
+        if (!path) {
+            alert("يرجى إدخال مسار المجلد الرئيسي أولاً.");
+            return;
+        }
+
+        showLoading("جاري التقطيع التلقائي لجميع الألواح وإنشاء مجلدات all cell...");
+
+        try {
+            const formData = new FormData();
+            formData.append('folder_path', path);
+
+            const res = await fetch('/api/batch-process', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await res.json();
+            hideLoading();
+
+            if (!res.ok) {
+                throw new Error(data.detail || "خطأ أثناء المعالجة التلقائية");
+            }
+
+            const results = data.results;
+            summaryTotalPanels.textContent = results.total_panels;
+            summarySuccessPanels.textContent = results.success_count;
+            summaryErrorPanels.textContent = results.error_count;
+            batchSummaryCards.style.display = 'grid';
+
+            batchLogTbody.innerHTML = '';
+            results.details.forEach((d, idx) => {
+                const tr = document.createElement('tr');
+                const isSuccess = d.status === 'SUCCESS';
+                const statusTag = isSuccess ?
+                    `<span class="tag-status-success"><i class="fa-solid fa-circle-check"></i> مكتمل (144 خلية)</span>` :
+                    `<span class="tag-status-error"><i class="fa-solid fa-circle-xmark"></i> خطأ: ${d.error || ''}</span>`;
+
+                tr.innerHTML = `
+                    <td>${idx + 1}</td>
+                    <td><strong>${d.panel_name}</strong></td>
+                    <td><span class="badge">${d.category}</span></td>
+                    <td>${statusTag}</td>
+                    <td><code style="color:var(--accent-cyan)">${d.target_dir}</code></td>
+                `;
+                batchLogTbody.appendChild(tr);
+            });
+            batchLogSection.style.display = 'flex';
+
+            alert(`🏁 اكتملت المعالجة التلقائية بالدفعة!\n✅ تمت معالجة ${results.success_count} لوح وإنشاء مجلد all cell في كل منها.`);
+
+        } catch (err) {
+            hideLoading();
+            alert("حدث خطأ أثناء معالجة الدفعة: " + err.message);
+        }
+    });
+
     function showLoading(msg) {
         loadingMsg.textContent = msg || "جاري المعالجة...";
         loadingOverlay.style.display = 'flex';
