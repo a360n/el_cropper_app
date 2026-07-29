@@ -14,9 +14,12 @@ class SolarPanelCropperEngine:
     Pipeline:
     0. Passes input image through process_tif.py (process_single_image) first.
     1. Ensure even height.
-    2. Aspect ratio correction (MH = 2 * MW) via equal cropping.
+    2. Aspect ratio correction (MH = 2 * MW) trimming excess width strictly from the RIGHT side
+       (starting at x = 0) and excess height strictly from the BOTTOM side (starting at y = 0).
     3. Calculate CH = MW / 6, CW = MH / 24.
-    4. Add 4-sided reflection padding: pad_x = (SL - CH)/2, pad_y = (SL - CW)/2.
+    4. Add 4-sided mirror reflection padding (BORDER_REFLECT_101):
+       - pad_x = (SL - CH) / 2 = 0.15 * CH
+       - pad_y = (SL - CW) / 2 = 0.80 * CW
     5. Calculate square cell size SL = 1.3 * CH.
     6. Extract 144 square cell patches (A1-F24).
     7. Resize patches to 224x224 PNG.
@@ -27,8 +30,6 @@ class SolarPanelCropperEngine:
         """Loads an image from raw bytes and passes it through process_tif.py first."""
         try:
             pil_img = Image.open(io.BytesIO(file_bytes))
-
-            # Step 0: Pre-process image via process_tif.py
             pil_img = process_single_image(pil_img)
 
             if pil_img.mode != 'RGB':
@@ -41,7 +42,6 @@ class SolarPanelCropperEngine:
             if img is None:
                 raise ValueError("Could not decode image bytes. Supported formats: TIF, PNG, JPG.")
             
-            # Convert OpenCV BGR -> PIL -> process_single_image -> OpenCV BGR
             pil_img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
             pil_img = process_single_image(pil_img)
             return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
@@ -50,7 +50,7 @@ class SolarPanelCropperEngine:
     def process_panel(cls, image_bgr: np.ndarray, target_cell_size: Tuple[int, int] = (224, 224)) -> Dict[str, Any]:
         """
         Executes the full pipeline on a panel image.
-        Returns metadata, full processed panel, grid boundaries, and 144 cell images.
+        Trims excess width strictly from the RIGHT side and excess height strictly from the BOTTOM.
         """
         orig_h, orig_w = image_bgr.shape[:2]
 
@@ -63,18 +63,14 @@ class SolarPanelCropperEngine:
         h1, w1 = image_step1.shape[:2]
 
         # Step 2: Aspect ratio correction (MH = 2 * MW)
+        # Trims excess width strictly from the RIGHT side (0 to target_mw)
+        # Trims excess height strictly from the BOTTOM side (0 to target_mh)
         if (h1 / 2.0) < w1:
             target_mw = int(round(h1 / 2.0))
-            crop_diff = w1 - target_mw
-            left_crop = crop_diff // 2
-            right_crop = left_crop + target_mw
-            model_img = image_step1[:, left_crop:right_crop]
+            model_img = image_step1[:, 0:target_mw]
         elif (h1 / 2.0) > w1:
             target_mh = int(round(2.0 * w1))
-            crop_diff = h1 - target_mh
-            top_crop = crop_diff // 2
-            bottom_crop = top_crop + target_mh
-            model_img = image_step1[top_crop:bottom_crop, :]
+            model_img = image_step1[0:target_mh, :]
         else:
             model_img = image_step1.copy()
 
@@ -88,13 +84,14 @@ class SolarPanelCropperEngine:
         sl_float = 1.3 * ch
         sl_px = int(round(sl_float))
 
-        # Step 4: Perfected 4-sided reflection padding
+        # Step 4: Perfected 4-sided mirror reflection padding
         pad_x_float = (sl_float - ch) / 2.0
         pad_y_float = (sl_float - cw) / 2.0
 
         pad_x = int(round(pad_x_float))
         pad_y = int(round(pad_y_float))
 
+        # Apply BORDER_REFLECT_101 (mirror without edge pixel duplication)
         padded_img = cv2.copyMakeBorder(
             model_img,
             top=pad_y,
@@ -117,32 +114,26 @@ class SolarPanelCropperEngine:
                 row_name = r_idx + 1
                 cell_id = f"{col_name}{row_name}"
 
-                # Cell center in padded image coordinates
                 cx = pad_x_float + (c_idx + 0.5) * ch
                 cy = pad_y_float + (r_idx + 0.5) * cw
 
-                # Square crop box boundaries
                 x_start = int(round(cx - sl_float / 2.0))
                 y_start = int(round(cy - sl_float / 2.0))
                 x_end = x_start + sl_px
                 y_end = y_start + sl_px
 
-                # Clamp safely to padded image bounds
                 x_start_clamped = max(0, x_start)
                 y_start_clamped = max(0, y_start)
                 x_end_clamped = min(nmw, x_end)
                 y_end_clamped = min(nmh, y_end)
 
-                # Extract patch
                 patch = padded_img[y_start_clamped:y_end_clamped, x_start_clamped:x_end_clamped]
 
-                # Resize patch directly to target_cell_size (224x224)
                 if patch.size > 0:
                     resized_patch = cv2.resize(patch, target_cell_size, interpolation=cv2.INTER_CUBIC)
                 else:
                     resized_patch = np.zeros((target_cell_size[1], target_cell_size[0], 3), dtype=np.uint8)
 
-                # Encode cell image to PNG bytes
                 _, png_buf = cv2.imencode('.png', resized_patch)
                 cell_png_bytes = png_buf.tobytes()
 
@@ -172,11 +163,9 @@ class SolarPanelCropperEngine:
                     "cy": cy
                 })
 
-        # Encode full padded panel image to PNG for frontend preview
         _, full_png_buf = cv2.imencode('.png', padded_img)
         full_panel_png_bytes = full_png_buf.tobytes()
 
-        # Encode unpadded model image
         _, model_png_buf = cv2.imencode('.png', model_img)
         model_panel_png_bytes = model_png_buf.tobytes()
 
@@ -190,7 +179,8 @@ class SolarPanelCropperEngine:
             "square_length_px": sl_px,
             "total_cells": len(cells_dict),
             "target_cell_size": f"{target_cell_size[0]}x{target_cell_size[1]}",
-            "preprocessed_by_process_tif": True
+            "preprocessed_by_process_tif": True,
+            "crop_mode": "RIGHT_SIDE_TRIM"
         }
 
         return {
@@ -202,7 +192,7 @@ class SolarPanelCropperEngine:
         }
 
 if __name__ == "__main__":
-    print("Testing CropperEngine with process_tif integration...")
+    print("Testing CropperEngine with RIGHT_SIDE_TRIM...")
     dummy = np.zeros((1000, 600, 3), dtype=np.uint8)
     res = SolarPanelCropperEngine.process_panel(dummy)
     print("Engine Test Success!")
