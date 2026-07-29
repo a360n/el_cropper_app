@@ -1,0 +1,54 @@
+# EL Solar Panel Cell Cropper (تطبيق تقطيع ألواح الطاقة الشمسية)
+
+تطبيق ويب محلي تفاعلي مبني باستخدام **Python & FastAPI & Vanilla JS & HTML/CSS** لتقطيع ألواح EL الشمسية بصيغة TIF إلى 144 خلية مربعة (من A1 إلى F24) بحجم 224x224 PNG حسب الخوارزمية الدقيقة لتجهيز بيانات نماذج الذكاء الاصطناعي.
+
+---
+
+## 💻 طريقة التشغيل على ويندوز (Windows)
+
+### 1️⃣ الاستنسال من جيت هاب (Git Clone)
+افتح **Command Prompt (cmd)** أو **PowerShell** ونفذ الأمر التالي:
+
+```cmd
+git clone https://github.com/a360n/el_cropper_app.git
+cd el_cropper_app
+```
+
+### 2️⃣ تثبيت المكتبات المطلوبة (Install Dependencies)
+```cmd
+pip install -r requirements.txt
+```
+
+### 3️⃣ تشغيل التطبيق (Run Application)
+يمكنك التشغيل بنقرة مزدوجة على الملف `run_app.bat` أو تنفيذ الأمر:
+
+```cmd
+python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+ثم افتح المتصفح على العنوان:
+👉 **[http://localhost:8000](http://localhost:8000)**
+
+---
+
+## 🍏 طريقة التشغيل على ماك (macOS)
+
+```bash
+git clone https://github.com/a360n/el_cropper_app.git
+cd el_cropper_app
+pip3 install -r requirements.txt
+./run_app.sh
+```
+
+---
+
+## ⚙️ ميزات الخوارزمية المطبقة
+1. **ارتفاع زوجي**: ضمان أن ارتفاع الصورة عدد زوجي.
+2. **نسبة أبعاد 2:1**: قص متساوي من الجوانب أو الأعلى والأسفل للحصول على $MH = 2 \times MW$.
+3. **أبعاد الخلايا Base**: $CH = MW / 6$ (عرض الخلية الأفقية) و $CW = MH / 24$ (ارتفاع الخلية).
+4. **انعكاس متناظر مكتمل 100%**:
+   - `pad_x = (SL - CH) / 2 = 0.15 * CH`
+   - `pad_y = (SL - CW) / 2 = 0.80 * CW`
+5. **طول ضلغ المربع المقطوع**: $SL = 1.3 \times CH$.
+6. **مصفوفة الخلايا 144**: استخراج المربعات من A1 إلى F24 بدون أي اقتطاع أو انحراف.
+7. **الحجم المباشر 224x224**: تحويل كل خلية إلى صيغة PNG عالية الجودة.

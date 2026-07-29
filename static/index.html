@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>أداة تقطيع أسطح الألواح الشمسية (EL Cell Cropper)</title>
+    <!-- Google Fonts: Cairo & Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="dark-theme">
+    <div class="app-container">
+        
+        <!-- Header Bar -->
+        <header class="app-header">
+            <div class="brand">
+                <div class="logo-icon">
+                    <i class="fa-solid fa-border-all"></i>
+                </div>
+                <div class="brand-text">
+                    <h1>مُقَطِّع ألواح الطاقة الشمسية (EL Cell Cropper)</h1>
+                    <p class="subtitle">خوارزمية التقطيع الدقيق بدقة 224×224 وتجهيز بيانات نماذج الذكاء الاصطناعي</p>
+                </div>
+            </div>
+            
+            <div class="header-actions">
+                <label for="file-input" class="btn btn-primary">
+                    <i class="fa-solid fa-cloud-arrow-up"></i>
+                    <span>رفع صورة اللوح (.tif / .png / .jpg)</span>
+                </label>
+                <input type="file" id="file-input" accept=".tif,.tiff,.png,.jpg,.jpeg" style="display: none;">
+            </div>
+        </header>
+
+        <!-- Main Content Grid -->
+        <main class="main-workspace" id="main-workspace">
+            
+            <!-- Upload Drop Zone (Visible when no image uploaded) -->
+            <div class="upload-dropzone-container" id="dropzone-container">
+                <div class="dropzone-card" id="dropzone-card">
+                    <div class="dropzone-icon">
+                        <i class="fa-solid fa-file-image"></i>
+                    </div>
+                    <h2>اسحب صورة اللوح (.tif) هنا أو انقر للاختيار</h2>
+                    <p>يدعم صيغ TIF التابعة لأجهزة EcoLab وصيغ PNG و JPG بكل سلاسة</p>
+                    <div class="algo-badges">
+                        <span class="badge"><i class="fa-solid fa-check"></i> نسبة الارتفاع 2:1</span>
+                        <span class="badge"><i class="fa-solid fa-shield-halved"></i> هامش 15% انعكاسي</span>
+                        <span class="badge"><i class="fa-solid fa-grid-2"></i> مصفوفة A1-F24 (144 خلية)</span>
+                        <span class="badge"><i class="fa-solid fa-expand"></i> الحجم المباشر 224x224</span>
+                    </div>
+                    <button class="btn btn-outline" onclick="document.getElementById('file-input').click()">
+                        <i class="fa-solid fa-folder-open"></i> تصفح الجهاز
+                    </button>
+                </div>
+            </div>
+
+            <!-- Interactive Workspace Split (Hidden until image loaded) -->
+            <div class="workspace-split" id="workspace-split" style="display: none;">
+                
+                <!-- LEFT PANE: Cell Inspector & Controls -->
+                <aside class="pane left-pane">
+                    
+                    <div class="pane-header">
+                        <h2><i class="fa-solid fa-microscope"></i> معاينة وتفتيش الخلايا المقطعة</h2>
+                        <span class="cell-count-badge" id="cell-count-badge">144 / 144 خلية</span>
+                    </div>
+
+                    <!-- Selected Cell Preview Card -->
+                    <div class="cell-inspector-card">
+                        <div class="cell-display-header">
+                            <div class="cell-id-badge" id="current-cell-id">A1</div>
+                            <div class="cell-coords-info" id="current-cell-coords">السطر 1 | العمود A (موقع 0,0)</div>
+                        </div>
+
+                        <!-- 224x224 Cell Image Container -->
+                        <div class="cell-image-preview-wrapper">
+                            <img id="cell-preview-img" src="" alt="Cell Preview 224x224" class="cell-img">
+                            <div class="img-dimensions-tag">224 × 224 px</div>
+                            <div class="cell-loading-spinner" id="cell-loader" style="display: none;">
+                                <i class="fa-solid fa-spinner fa-spin"></i>
+                            </div>
+                        </div>
+
+                        <!-- Navigation Bar -->
+                        <div class="cell-navigation-bar">
+                            <button class="nav-btn" id="btn-prev-cell" title="الخلية السابقة (السهم الأيمن/الأعلى)">
+                                <i class="fa-solid fa-chevron-right"></i> السابقة
+                            </button>
+                            
+                            <select id="cell-select-dropdown" class="cell-dropdown">
+                                <!-- Populated dynamically A1 to F24 -->
+                            </select>
+
+                            <button class="nav-btn" id="btn-next-cell" title="الخلية التالية (السهم الأيسر/الأسفل)">
+                                التالية <i class="fa-solid fa-chevron-left"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Mini Matrix Grid Selector (6x24 Grid representation) -->
+                    <div class="matrix-grid-section">
+                        <div class="matrix-header">
+                            <h3><i class="fa-solid fa-table-cells"></i> مصفوفة التبديل السريع (A1 - F24)</h3>
+                            <span class="hint">اضغط على أي خلية للتنقل المباشر</span>
+                        </div>
+                        <div class="matrix-grid" id="matrix-grid">
+                            <!-- Populated dynamically: Columns A-F, Rows 1-24 -->
+                        </div>
+                    </div>
+
+                    <!-- Metadata & Algorithm Parameters Details -->
+                    <div class="stats-accordion">
+                        <div class="accordion-title">
+                            <span><i class="fa-solid fa-sliders"></i> تفاصيل الحسابات الهندسية للوح</span>
+                            <i class="fa-solid fa-chevron-down"></i>
+                        </div>
+                        <div class="accordion-content">
+                            <div class="stat-row">
+                                <span class="stat-label">الأبعاد الأصلية:</span>
+                                <span class="stat-val" id="stat-orig-dim">-</span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">أبعاد النموذج (2:1):</span>
+                                <span class="stat-val" id="stat-model-dim">-</span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">أبعاد الأمان (+15% هامش):</span>
+                                <span class="stat-val" id="stat-padded-dim">-</span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">عرض الخلية الأفقية (CH):</span>
+                                <span class="stat-val" id="stat-ch">-</span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">ارتفاع الخلية العمودية (CW):</span>
+                                <span class="stat-val" id="stat-cw">-</span>
+                            </div>
+                            <div class="stat-row">
+                                <span class="stat-label">طول ضلع المربع المقطوع (SL):</span>
+                                <span class="stat-val" id="stat-sl">-</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Batch Export Actions -->
+                    <div class="export-actions-section">
+                        <h3><i class="fa-solid fa-download"></i> تصدير البيانات لتخزين الذكاء الاصطناعي</h3>
+                        <div class="export-buttons-group">
+                            <button class="btn btn-success" id="btn-export-zip">
+                                <i class="fa-solid fa-file-zipper"></i>
+                                <span>تحميل ملف مضغوط ZIP (144 خلية)</span>
+                            </button>
+                            <button class="btn btn-secondary" id="btn-export-folder">
+                                <i class="fa-solid fa-folder-plus"></i>
+                                <span>حفظ بمجلد المحلي (exported_cells)</span>
+                            </button>
+                        </div>
+                        <div class="export-status-msg" id="export-status-msg"></div>
+                    </div>
+
+                </aside>
+
+                <!-- RIGHT PANE: Full Panel Visualizer & Interactive Overlay -->
+                <section class="pane right-pane">
+                    
+                    <div class="pane-header">
+                        <h2><i class="fa-solid fa-image"></i> المعاينة الكاملة للوح الشمسي</h2>
+                        <div class="overlay-controls">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="toggle-grid-overlay" checked>
+                                <span class="slider round"></span>
+                                <span class="toggle-label">شبكة التقطيع</span>
+                            </label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="toggle-padding-highlight" checked>
+                                <span class="slider round"></span>
+                                <span class="toggle-label">إظهار هامش الأمان (15%)</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Interactive Canvas & Full Panel Viewer -->
+                    <div class="full-panel-viewport" id="panel-viewport">
+                        <div class="canvas-wrapper" id="canvas-wrapper">
+                            <img id="full-panel-img" src="" alt="Full Panel" class="panel-img">
+                            <canvas id="grid-canvas" class="grid-canvas"></canvas>
+                        </div>
+                    </div>
+
+                </section>
+
+            </div>
+
+        </main>
+
+        <!-- Loading Overlay -->
+        <div class="global-loading-overlay" id="loading-overlay" style="display: none;">
+            <div class="spinner-card">
+                <i class="fa-solid fa-gear fa-spin fa-3x"></i>
+                <p id="loading-msg">جاري معالجة وتقطيع الصورة حسب الخوارزمية...</p>
+            </div>
+        </div>
+
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
