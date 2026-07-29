@@ -7,7 +7,7 @@ from cropper_engine import SolarPanelCropperEngine
 def find_panel_folders(root_dir: str) -> List[Dict[str, str]]:
     """
     Scans root_dir (which typically contains Good_models/ and bad_models/)
-    and finds all panel folders containing a .tif / .tiff file.
+    and finds all panel folders containing .tif / .tiff / .pfile files.
     Returns a list of dicts: [{'panel_dir': ..., 'tif_path': ..., 'category': ...}]
     """
     panel_list = []
@@ -17,9 +17,13 @@ def find_panel_folders(root_dir: str) -> List[Dict[str, str]]:
         if os.path.basename(dirpath).lower() in ['all cell', 'all_cell', 'all cells', 'exported_cells']:
             continue
 
-        tif_files = [f for f in filenames if f.lower().endswith(('.tif', '.tiff'))]
+        tif_files = [f for f in filenames if f.lower().endswith(('.tif', '.tiff', '.tif.pfile', '.tiff.pfile'))]
+        
+        # Fallback: check if any file has .pfile extension
+        if not tif_files:
+            tif_files = [f for f in filenames if f.lower().endswith('.pfile') and not f.startswith('$')]
+
         if tif_files:
-            # Pick primary tif file (prefer row.tif or marked.tif if multiple)
             primary_tif = tif_files[0]
             for f in tif_files:
                 if 'row' in f.lower() or 'marked' in f.lower():
@@ -28,7 +32,6 @@ def find_panel_folders(root_dir: str) -> List[Dict[str, str]]:
 
             full_tif_path = os.path.join(dirpath, primary_tif)
 
-            # Determine category if under Good_models or bad_models
             rel_path = os.path.relpath(dirpath, root_dir)
             category = "Unknown"
             if "good_models" in rel_path.lower():
@@ -54,7 +57,7 @@ def process_batch_directory(
 ) -> Dict[str, Any]:
     """
     Processes all panel folders inside root_dir:
-    1. Finds all panel folders containing .tif images.
+    1. Finds all panel folders containing .tif / .pfile images.
     2. Runs each panel image through process_tif + cropper engine.
     3. Saves 144 cell PNG images inside 'all cell/' inside each panel folder.
     """
@@ -82,10 +85,12 @@ def process_batch_directory(
         tif_path = panel["tif_path"]
         panel_name = panel["panel_name"]
 
-        # Output folder 'all cell' inside the panel directory
         target_cell_dir = os.path.join(panel_dir, "all cell")
 
         try:
+            if tif_path.lower().endswith('.pfile'):
+                raise ValueError(f"الملف مشفر بنظام التشفير (RMS/PFILE): {os.path.basename(tif_path)}")
+
             with open(tif_path, 'rb') as f:
                 file_bytes = f.read()
 
