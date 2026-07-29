@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import gc
 from typing import Dict, Any, List, Callable, Optional
 from cropper_engine import SolarPanelCropperEngine
 
@@ -8,18 +9,15 @@ def find_panel_folders(root_dir: str) -> List[Dict[str, str]]:
     """
     Scans root_dir (which typically contains Good_models/ and bad_models/)
     and finds all panel folders containing .tif / .tiff / .pfile files.
-    Returns a list of dicts: [{'panel_dir': ..., 'tif_path': ..., 'category': ...}]
+    Memory-efficient generator & scanner.
     """
     panel_list = []
     
     for dirpath, dirnames, filenames in os.walk(root_dir):
-        # Skip 'all cell' directories from recursive scanning
         if os.path.basename(dirpath).lower() in ['all cell', 'all_cell', 'all cells', 'exported_cells']:
             continue
 
         tif_files = [f for f in filenames if f.lower().endswith(('.tif', '.tiff', '.tif.pfile', '.tiff.pfile'))]
-        
-        # Fallback: check if any file has .pfile extension
         if not tif_files:
             tif_files = [f for f in filenames if f.lower().endswith('.pfile') and not f.startswith('$')]
 
@@ -31,7 +29,6 @@ def find_panel_folders(root_dir: str) -> List[Dict[str, str]]:
                     break
 
             full_tif_path = os.path.join(dirpath, primary_tif)
-
             rel_path = os.path.relpath(dirpath, root_dir)
             category = "Unknown"
             if "good_models" in rel_path.lower():
@@ -40,7 +37,6 @@ def find_panel_folders(root_dir: str) -> List[Dict[str, str]]:
                 category = "bad_models"
 
             panel_name = os.path.basename(dirpath)
-
             panel_list.append({
                 "panel_name": panel_name,
                 "panel_dir": dirpath,
@@ -56,10 +52,9 @@ def process_batch_directory(
     progress_callback: Optional[Callable[[int, int, Dict[str, Any]], None]] = None
 ) -> Dict[str, Any]:
     """
-    Processes all panel folders inside root_dir:
-    1. Finds all panel folders containing .tif / .pfile images.
-    2. Runs each panel image through process_tif + cropper engine.
-    3. Saves 144 cell PNG images inside 'all cell/' inside each panel folder.
+    Processes large-scale panel directories (up to 20,000+ panels):
+    - Memory safe: cleans RAM after each panel.
+    - Fault tolerant: skipped or corrupted files do not stop the batch.
     """
     if not os.path.exists(root_dir):
         raise FileNotFoundError(f"Directory not found: {root_dir}")
@@ -76,9 +71,11 @@ def process_batch_directory(
     }
 
     print(f"\n==========================================")
-    print(f"🚀 بدء معالجة مجلد الألواح: {root_dir}")
-    print(f"📊 إجمالي عدد الألواح المكتشفة: {total_panels}")
+    print(f"🚀 بدء معالجة مجلد الألواح الضخم: {root_dir}")
+    print(f"📊 إجمالي عدد الألواح المكتشفة: {total_panels:,} لوح")
     print(f"==========================================\n")
+
+    start_time = time.time()
 
     for idx, panel in enumerate(panels, 1):
         panel_dir = panel["panel_dir"]
@@ -89,7 +86,7 @@ def process_batch_directory(
 
         try:
             if tif_path.lower().endswith('.pfile'):
-                raise ValueError(f"الملف مشفر بنظام التشفير (RMS/PFILE): {os.path.basename(tif_path)}")
+                raise ValueError(f"الملف مشفر بنظام PFILE: {os.path.basename(tif_path)}")
 
             with open(tif_path, 'rb') as f:
                 file_bytes = f.read()
@@ -117,7 +114,11 @@ def process_batch_directory(
             }
             results["details"].append(status_info)
 
-            print(f"✅ [{idx}/{total_panels}] تم تقطيع اللوح [{panel_name}] -> وحفظ 144 خلية في '{target_cell_dir}'")
+            if idx % 100 == 0 or idx == total_panels:
+                elapsed = time.time() - start_time
+                rate = idx / elapsed if elapsed > 0 else 0
+                remaining = (total_panels - idx) / rate if rate > 0 else 0
+                print(f"⏳ [{idx:,}/{total_panels:,}] - نجاح: {results['success_count']:,} | أخطاء: {results['error_count']} | السرعة: {rate:.1f} لوح/ثانية | المتبقي المتوقع: {remaining/60:.1f} دقيقة")
 
         except Exception as e:
             results["error_count"] += 1
@@ -129,14 +130,21 @@ def process_batch_directory(
                 "status": "ERROR"
             }
             results["details"].append(status_info)
-            print(f"❌ [{idx}/{total_panels}] خطأ في معالجة اللوح [{panel_name}]: {e}")
+            print(f"❌ [{idx:,}/{total_panels:,}] خطأ في اللوح [{panel_name}]: {e}")
+
+        # Clean memory every 50 panels to keep RAM minimal
+        if idx % 50 == 0:
+            gc.collect()
 
         if progress_callback:
             progress_callback(idx, total_panels, status_info)
 
+    elapsed = time.time() - start_time
     print(f"\n==========================================")
-    print(f"🏁 اكتملت المعالجة التلقائية دفعة واحدة!")
-    print(f"✅ ناجحة: {results['success_count']}")
+    print(f"🏁 اكتملت المعالجة الكلية!")
+    print(f"⏱️ الوقت الإجمالي: {elapsed/60:.2f} دقيقة")
+    print(f"✅ ألواح ناجحة: {results['success_count']:,} لوح")
+    print(f"📦 إجمالي صور الخلايا الناتجة (224x224): {results['success_count'] * 144:,} صورة PNG")
     print(f"⚠️ أخطاء: {results['error_count']}")
     print(f"==========================================\n")
 

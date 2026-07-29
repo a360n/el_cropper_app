@@ -63,9 +63,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let gridOverlayData = [];
     let metadata = {};
 
-    // ----------------------------------------------------
-    // Tab Mode Switcher
-    // ----------------------------------------------------
     tabSingleMode.addEventListener('click', () => {
         tabSingleMode.classList.add('active');
         tabBatchMode.classList.remove('active');
@@ -82,9 +79,6 @@ document.addEventListener('DOMContentLoaded', () => {
         btnHeaderUpload.style.display = 'none';
     });
 
-    // ----------------------------------------------------
-    // Drag & Drop Single Upload Handlers
-    // ----------------------------------------------------
     fileInput.addEventListener('change', (e) => {
         if (e.target.files.length > 0) {
             handleFileUpload(e.target.files[0]);
@@ -381,7 +375,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ----------------------------------------------------
-    // MODE 2: BATCH FOLDER PROCESSING LOGIC
+    // MODE 2: BATCH FOLDER PROCESSING LOGIC (High Scale Optimized)
     // ----------------------------------------------------
     btnScanFolder.addEventListener('click', async () => {
         const path = batchFolderPath.value.trim();
@@ -390,7 +384,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        showLoading("جاري فحص مجلد الألواح...");
+        showLoading("جاري فحص المجلد وإحصاء الألواح...");
 
         try {
             const res = await fetch(`/api/scan-folder?folder_path=${encodeURIComponent(path)}`);
@@ -401,26 +395,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(data.detail || "فشل فحص المجلد");
             }
 
-            summaryTotalPanels.textContent = data.total_panels;
+            summaryTotalPanels.textContent = Number(data.total_panels).toLocaleString();
             summarySuccessPanels.textContent = '0';
             summaryErrorPanels.textContent = '0';
             batchSummaryCards.style.display = 'grid';
 
-            batchLogTbody.innerHTML = '';
-            data.panels.forEach((p, idx) => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${idx + 1}</td>
-                    <td><strong>${p.panel_name}</strong></td>
-                    <td><span class="badge">${p.category}</span></td>
-                    <td><span class="text-secondary">بانتظار التقطيع</span></td>
-                    <td class="text-muted">${p.panel_dir}/all cell</td>
-                `;
-                batchLogTbody.appendChild(tr);
-            });
+            renderLogTable(data.panels.map(p => ({
+                panel_name: p.panel_name,
+                category: p.category,
+                target_dir: `${p.panel_dir}/all cell`,
+                status: 'PENDING'
+            })));
             batchLogSection.style.display = 'flex';
 
-            alert(`تم فحص المجلد بنجاح العثور على ${data.total_panels} لوح شمسي جاهز للتقطيع.`);
+            alert(`تم فحص المجلد بنجاح! العثور على ${data.total_panels.toLocaleString()} لوح شمسي جاهز للتقطيع.`);
 
         } catch (err) {
             hideLoading();
@@ -435,7 +423,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        showLoading("جاري التقطيع التلقائي لجميع الألواح وإنشاء مجلدات all cell...");
+        showLoading("جاري التقطيع التلقائي للألواح وإنشاء مجلدات all cell (قد يستغرق بعض الوقت للكميات الضخمة)...");
 
         try {
             const formData = new FormData();
@@ -454,37 +442,59 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const results = data.results;
-            summaryTotalPanels.textContent = results.total_panels;
-            summarySuccessPanels.textContent = results.success_count;
-            summaryErrorPanels.textContent = results.error_count;
+            summaryTotalPanels.textContent = Number(results.total_panels).toLocaleString();
+            summarySuccessPanels.textContent = Number(results.success_count).toLocaleString();
+            summaryErrorPanels.textContent = Number(results.error_count).toLocaleString();
             batchSummaryCards.style.display = 'grid';
 
-            batchLogTbody.innerHTML = '';
-            results.details.forEach((d, idx) => {
-                const tr = document.createElement('tr');
-                const isSuccess = d.status === 'SUCCESS';
-                const statusTag = isSuccess ?
-                    `<span class="tag-status-success"><i class="fa-solid fa-circle-check"></i> مكتمل (144 خلية)</span>` :
-                    `<span class="tag-status-error"><i class="fa-solid fa-circle-xmark"></i> خطأ: ${d.error || ''}</span>`;
-
-                tr.innerHTML = `
-                    <td>${idx + 1}</td>
-                    <td><strong>${d.panel_name}</strong></td>
-                    <td><span class="badge">${d.category}</span></td>
-                    <td>${statusTag}</td>
-                    <td><code style="color:var(--accent-cyan)">${d.target_dir}</code></td>
-                `;
-                batchLogTbody.appendChild(tr);
-            });
+            renderLogTable(results.details);
             batchLogSection.style.display = 'flex';
 
-            alert(`🏁 اكتملت المعالجة التلقائية بالدفعة!\n✅ تمت معالجة ${results.success_count} لوح وإنشاء مجلد all cell في كل منها.`);
+            const totalCells = (results.success_count * 144).toLocaleString();
+            alert(`🏁 اكتملت المعالجة الكلية بالدفعة!\n✅ تمت معالجة ${results.success_count.toLocaleString()} لوح بنجاح.\n📦 إجمالي الخلايا الناتجة: ${totalCells} صورة PNG.`);
 
         } catch (err) {
             hideLoading();
             alert("حدث خطأ أثناء معالجة الدفعة: " + err.message);
         }
     });
+
+    // Efficient Table Log Rendering (limits DOM rendering for large lists like 17,000+ items)
+    function renderLogTable(items) {
+        batchLogTbody.innerHTML = '';
+        const limit = Math.min(items.length, 500); // Display top 500 rows for fast browser UI rendering
+        
+        for (let idx = 0; idx < limit; idx++) {
+            const d = items[idx];
+            const tr = document.createElement('tr');
+            
+            let statusTag = `<span class="text-secondary">بانتظار التقطيع</span>`;
+            if (d.status === 'SUCCESS') {
+                statusTag = `<span class="tag-status-success"><i class="fa-solid fa-circle-check"></i> مكتمل (144 خلية)</span>`;
+            } else if (d.status === 'ERROR') {
+                statusTag = `<span class="tag-status-error"><i class="fa-solid fa-circle-xmark"></i> خطأ: ${d.error || ''}</span>`;
+            }
+
+            tr.innerHTML = `
+                <td>${idx + 1}</td>
+                <td><strong>${d.panel_name}</strong></td>
+                <td><span class="badge">${d.category}</span></td>
+                <td>${statusTag}</td>
+                <td><code style="color:var(--accent-cyan)">${d.target_dir}</code></td>
+            `;
+            batchLogTbody.appendChild(tr);
+        }
+
+        if (items.length > 500) {
+            const trNotice = document.createElement('tr');
+            trNotice.innerHTML = `
+                <td colspan="5" style="text-align:center; color: var(--accent-blue); padding: 12px;">
+                    ℹ️ يتم عرض أول 500 لوح من إجمالي ${items.length.toLocaleString()} لوح للحفاظ على سرعة المتصفح. جميع المجلدات تم تقطيعها وحفظها على القرص الصلب.
+                </td>
+            `;
+            batchLogTbody.appendChild(trNotice);
+        }
+    }
 
     function showLoading(msg) {
         loadingMsg.textContent = msg || "جاري المعالجة...";
