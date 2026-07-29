@@ -10,9 +10,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from cropper_engine import SolarPanelCropperEngine
 from batch_cropper import process_batch_directory, find_panel_folders
 
-app = FastAPI(title="EL Solar Panel Cell Cropper API", version="2.0.0")
+app = FastAPI(title="EL Solar Panel Cell Cropper API", version="2.1.0")
 
-# Enable CORS for local desktop usage
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -74,7 +73,8 @@ async def batch_process_folder(folder_path: str = Form(...)):
     """
     Processes an entire local root folder containing Good_models / bad_models.
     Finds all panel folders inside, crops each panel's .tif image, and creates
-    an 'all cell' folder alongside the .tif and .el files containing the 144 PNGs.
+    an 'all cell' folder alongside the .tif and .el files containing the 144 PNGs
+    named '[PanelName]-[CellID].png'.
     """
     folder_path = folder_path.strip('"\'')
     if not os.path.exists(folder_path):
@@ -129,7 +129,7 @@ async def get_cell_image(session_id: str, cell_id: str):
 
 @app.get("/api/export/zip/{session_id}")
 async def export_zip(session_id: str):
-    """Generates and downloads a ZIP file containing all 144 cell PNG images."""
+    """Generates and downloads a ZIP file containing all 144 cell PNG images named '[PanelName]-[CellID].png'."""
     if session_id not in SESSION_CACHE:
         raise HTTPException(status_code=404, detail="Session not found.")
 
@@ -140,7 +140,7 @@ async def export_zip(session_id: str):
     zip_io = io.BytesIO()
     with zipfile.ZipFile(zip_io, mode='w', compression=zipfile.ZIP_DEFLATED) as zf:
         for cell_id, cell_data in cells.items():
-            file_name_in_zip = f"{orig_filename}_{cell_id}.png"
+            file_name_in_zip = f"{orig_filename}-{cell_id}.png"
             zf.writestr(file_name_in_zip, cell_data["png_bytes"])
 
     zip_io.seek(0)
@@ -153,7 +153,7 @@ async def export_zip(session_id: str):
 
 @app.post("/api/export/folder/{session_id}")
 async def export_to_folder(session_id: str, custom_path: str = Form(None)):
-    """Saves all 144 cell PNG images into a local workspace directory."""
+    """Saves all 144 cell PNG images into a local workspace directory named '[PanelName]-[CellID].png'."""
     if session_id not in SESSION_CACHE:
         raise HTTPException(status_code=404, detail="Session not found.")
 
@@ -170,7 +170,7 @@ async def export_to_folder(session_id: str, custom_path: str = Form(None)):
 
     saved_count = 0
     for cell_id, cell_data in cells.items():
-        file_path = os.path.join(target_dir, f"{cell_id}.png")
+        file_path = os.path.join(target_dir, f"{orig_filename}-{cell_id}.png")
         with open(file_path, "wb") as f:
             f.write(cell_data["png_bytes"])
         saved_count += 1

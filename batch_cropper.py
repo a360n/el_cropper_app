@@ -9,7 +9,6 @@ def find_panel_folders(root_dir: str) -> List[Dict[str, str]]:
     """
     Scans root_dir (which typically contains Good_models/ and bad_models/)
     and finds all panel folders containing .tif / .tiff / .pfile files.
-    Memory-efficient generator & scanner.
     """
     panel_list = []
     
@@ -52,9 +51,11 @@ def process_batch_directory(
     progress_callback: Optional[Callable[[int, int, Dict[str, Any]], None]] = None
 ) -> Dict[str, Any]:
     """
-    Processes large-scale panel directories (up to 20,000+ panels):
-    - Memory safe: cleans RAM after each panel.
-    - Fault tolerant: skipped or corrupted files do not stop the batch.
+    Processes all panel folders inside root_dir:
+    1. Finds all panel folders containing .tif / .pfile images.
+    2. Runs each panel image through process_tif + cropper engine.
+    3. Saves 144 cell PNG images named '[PanelName]-[CellID].png' (e.g. 2026-01-07_12-59-28-A1.png)
+       inside 'all cell/' inside each panel folder.
     """
     if not os.path.exists(root_dir):
         raise FileNotFoundError(f"Directory not found: {root_dir}")
@@ -71,7 +72,7 @@ def process_batch_directory(
     }
 
     print(f"\n==========================================")
-    print(f"🚀 بدء معالجة مجلد الألواح الضخم: {root_dir}")
+    print(f"🚀 بدء معالجة مجلد الألواح: {root_dir}")
     print(f"📊 إجمالي عدد الألواح المكتشفة: {total_panels:,} لوح")
     print(f"==========================================\n")
 
@@ -99,7 +100,9 @@ def process_batch_directory(
             cells_dict = crop_res["cells"]
             saved_cells_count = 0
             for cell_id, cell_data in cells_dict.items():
-                cell_file_path = os.path.join(target_cell_dir, f"{cell_id}.png")
+                # Formatted naming: [PanelName]-[CellID].png
+                cell_file_name = f"{panel_name}-{cell_id}.png"
+                cell_file_path = os.path.join(target_cell_dir, cell_file_name)
                 with open(cell_file_path, "wb") as cf:
                     cf.write(cell_data["png_bytes"])
                 saved_cells_count += 1
@@ -132,7 +135,6 @@ def process_batch_directory(
             results["details"].append(status_info)
             print(f"❌ [{idx:,}/{total_panels:,}] خطأ في اللوح [{panel_name}]: {e}")
 
-        # Clean memory every 50 panels to keep RAM minimal
         if idx % 50 == 0:
             gc.collect()
 
