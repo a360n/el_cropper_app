@@ -1,16 +1,18 @@
 import os
 import io
 import uuid
+import json
 import zipfile
+import cv2
 from typing import Dict, Any, Optional
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, BackgroundTasks
 from fastapi.responses import Response, FileResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from cropper_engine import SolarPanelCropperEngine
-from batch_cropper import process_batch_directory, find_panel_folders
+from batch_cropper import process_batch_directory, find_panel_folders, parse_panel_info
 
-app = FastAPI(title="EL Solar Panel Cell Cropper API", version="2.1.0")
+app = FastAPI(title="EL Solar Panel Cell Cropper API", version="2.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -21,7 +23,6 @@ app.add_middleware(
 )
 
 SESSION_CACHE: Dict[str, Dict[str, Any]] = {}
-BATCH_TASKS: Dict[str, Dict[str, Any]] = {}
 
 EXPORT_BASE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "exported_cells")
 os.makedirs(EXPORT_BASE_DIR, exist_ok=True)
@@ -30,7 +31,7 @@ os.makedirs(EXPORT_BASE_DIR, exist_ok=True)
 async def upload_panel_image(file: UploadFile = File(...)):
     """
     Receives uploaded single panel image (.tif / .png / .jpg).
-    Passes it through process_tif.py & 7-step cropping algorithm and caches output.
+    Passes it through process_tif.py & cropping engine and caches output.
     """
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file selected.")
@@ -72,9 +73,8 @@ async def upload_panel_image(file: UploadFile = File(...)):
 async def batch_process_folder(folder_path: str = Form(...)):
     """
     Processes an entire local root folder containing Good_models / bad_models.
-    Finds all panel folders inside, crops each panel's .tif image, and creates
-    an 'all cell' folder alongside the .tif and .el files containing the 144 PNGs
-    named '[PanelName]-[CellID].png'.
+    Crops panels, creates 'all cell' and 'bad cells' per panel, and aggregates
+    'all good cells' and 'all bad cells' at root level.
     """
     folder_path = folder_path.strip('"\'')
     if not os.path.exists(folder_path):
@@ -103,6 +103,85 @@ async def scan_folder_info(folder_path: str):
         "total_panels": len(panels),
         "panels": panels
     })
+
+@app.get("/api/bad-panels-list")
+async def get_bad_panels_list(folder_path: str):
+    """
+    Returns the list and details of all defective panels found inside folder_path (bad_models).
+    Includes info.json metadata, list of bad cells, and panel directory paths.
+    """
+    folder_path = folder_path.strip('"\'')
+    if not os.path.exists(folder_path):
+        raise HTTPException(status_code=404, detail=f"المجلد غير موجود: {folder_path}")
+
+    all_panels = find_panel_folders(folder_path)
+    bad_panels = []
+
+    for panel in all_panels:
+        category = panel["category"]
+        panel_dir = panel["panel_dir"]
+        info = parse_panel_info(panel_dir)
+
+        if category == "bad_models" or info["is_defective"] or len(info["defective_cell_ids"]) > 0:
+            bad_cell_dir = os.path.join(panel_dir, "bad cells")
+            bad_cell_files = []
+            if os.path.exists(bad_cell_dir):
+                bad_cell_files = [
+                    {"filename": f, "path": os.path.join(bad_cell_dir, f)}
+                    for f in sorted(os.listdir(bad_cell_dir)) if f.endswith(".png")
+                ]
+
+            raw_json = {}
+            json_path = os.path.join(panel_dir, "info.json")
+            if os.path.exists(json_path):
+                try:
+                    with open(json_path, "r", encoding="utf-8", errors="ignore") as f:
+                        raw_json = json.load(f)
+                except Exception:
+                    pass
+
+            bad_panels.append({
+                "panel_name": panel["panel_name"],
+                "panel_dir": panel_dir,
+                "tif_path": panel["tif_path"],
+                "category": category,
+                "info": {
+                    "is_defective": info["is_defective"],
+                    "defects": info["defects"],
+                    "defective_cell_ids": sorted(list(info["defective_cell_ids"]))
+                },
+                "raw_json": raw_json,
+                "bad_cell_files": bad_cell_files
+            })
+
+    return JSONResponse({
+        "folder_path": folder_path,
+        "total_bad_panels": len(bad_panels),
+        "bad_panels": bad_panels
+    })
+
+@app.get("/api/panel-file-preview")
+async def preview_panel_file(path: str):
+    """Renders a panel TIF image file as PNG on the fly for browser preview."""
+    path = path.strip('"\'')
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="File not found")
+    try:
+        with open(path, "rb") as f:
+            file_bytes = f.read()
+        image_bgr = SolarPanelCropperEngine.load_image(file_bytes)
+        _, png_buf = cv2.imencode('.png', image_bgr)
+        return Response(content=png_buf.tobytes(), media_type="image/png")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/cell-file-preview")
+async def preview_cell_file(path: str):
+    """Serves a local cell PNG image file."""
+    path = path.strip('"\'')
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(path, media_type="image/png")
 
 @app.get("/api/panel-image/{session_id}")
 async def get_panel_image(session_id: str):

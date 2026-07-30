@@ -221,6 +221,9 @@
                             <button class="btn btn-success" id="btn-run-batch">
                                 <i class="fa-solid fa-play"></i> بدء التقطيع وتجميع البيانات
                             </button>
+                            <button class="btn btn-warning" id="btn-inspect-bad-panels" style="display: inline-flex;">
+                                <i class="fa-solid fa-triangle-exclamation"></i> معاينة الألواح المعيبة (Bad Panels Inspector)
+                            </button>
                         </div>
                     </div>
 
@@ -268,6 +271,69 @@
             </div>
 
         </main>
+
+        <!-- BAD PANELS INSPECTOR MODAL -->
+        <div class="modal-overlay" id="bad-panels-modal" style="display: none;">
+            <div class="modal-card bad-panels-modal-card">
+                <div class="modal-header">
+                    <div class="modal-title">
+                        <i class="fa-solid fa-triangle-exclamation text-red"></i>
+                        <h2>معاينة وتفتيش الألواح المعيبة (Bad Panels Inspector)</h2>
+                    </div>
+                    <div class="modal-header-actions">
+                        <span class="panel-nav-counter" id="bad-panel-counter">اللوح 1 من 30</span>
+                        <select id="bad-panel-dropdown" class="panel-dropdown-select"></select>
+                        <button class="modal-close-btn" id="btn-close-bad-modal">&times;</button>
+                    </div>
+                </div>
+
+                <div class="modal-body bad-panels-modal-body">
+                    <!-- Left Column: JSON Info & Bad Cell Images -->
+                    <div class="modal-col info-bad-cells-col">
+                        <div class="bad-panel-info-card">
+                            <div class="info-card-header">
+                                <h3 id="bad-panel-name-heading">اللوح: 2026-01-07_12-59-28</h3>
+                                <span class="status-badge status-fail" id="bad-panel-status-tag">FAIL (معيب)</span>
+                            </div>
+                            <div class="json-metadata-list" id="bad-panel-json-details">
+                                <div class="json-row"><span class="json-key">الرقم التسلسلي:</span> <span class="json-val" id="json-serial">-</span></div>
+                                <div class="json-row"><span class="json-key">التاريخ والوقت:</span> <span class="json-val" id="json-timestamp">-</span></div>
+                                <div class="json-row"><span class="json-key">قائمة العيوب المسجلة:</span> <div class="defects-tags-list" id="json-defects-list"></div></div>
+                            </div>
+                        </div>
+
+                        <!-- Bad Cell Images Container -->
+                        <div class="bad-cells-preview-section">
+                            <h3><i class="fa-solid fa-circle-exclamation text-gold"></i> صور الخلايا المعيبة المقطعة (bad cells/)</h3>
+                            <div class="bad-cells-grid" id="bad-cells-grid"></div>
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Full Panel Preview -->
+                    <div class="modal-col panel-image-col">
+                        <div class="full-panel-modal-card">
+                            <h3><i class="fa-solid fa-image"></i> صورة اللوح كاملة (.tif)</h3>
+                            <div class="modal-panel-viewport">
+                                <img id="modal-full-panel-img" src="" alt="Full Defective Panel" class="modal-panel-img">
+                                <div class="modal-loader" id="modal-panel-loader" style="display: none;">
+                                    <i class="fa-solid fa-spinner fa-spin fa-2x"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" id="btn-prev-bad-panel">
+                        <i class="fa-solid fa-chevron-right"></i> اللوح السابق
+                    </button>
+                    <span class="footer-hint">استخدم زر الأسهم أو القائمة المنسدلة للتردد بين الألواح المعيبة</span>
+                    <button class="btn btn-primary" id="btn-next-bad-panel">
+                        اللوح التالي <i class="fa-solid fa-chevron-left"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
 
         <!-- Loading Overlay -->
         <div class="global-loading-overlay" id="loading-overlay" style="display: none;">

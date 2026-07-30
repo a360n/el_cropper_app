@@ -1,5 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // State Variables
+    // State Variables - Single Panel Mode
     let currentSessionId = null;
     let metadata = null;
     let gridOverlay = [];
@@ -7,6 +7,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentCellIndex = 0;
     let isGridVisible = true;
     let isPaddingHighlightVisible = true;
+
+    // State Variables - Bad Panels Inspector Modal
+    let badPanelsList = [];
+    let currentBadPanelIndex = 0;
 
     // DOM Elements - Mode Switching
     const tabSingleMode = document.getElementById('tab-single-mode');
@@ -53,6 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const batchFolderPath = document.getElementById('batch-folder-path');
     const btnScanFolder = document.getElementById('btn-scan-folder');
     const btnRunBatch = document.getElementById('btn-run-batch');
+    const btnInspectBadPanels = document.getElementById('btn-inspect-bad-panels');
     const batchSummaryCards = document.getElementById('batch-summary-cards');
     const batchLogSection = document.getElementById('batch-log-section');
     const summaryTotalPanels = document.getElementById('summary-total-panels');
@@ -60,6 +65,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const summaryBadCells = document.getElementById('summary-bad-cells');
     const summaryErrorPanels = document.getElementById('summary-error-panels');
     const batchLogTbody = document.getElementById('batch-log-tbody');
+
+    // DOM Elements - Bad Panels Modal
+    const badPanelsModal = document.getElementById('bad-panels-modal');
+    const btnCloseBadModal = document.getElementById('btn-close-bad-modal');
+    const badPanelCounter = document.getElementById('bad-panel-counter');
+    const badPanelDropdown = document.getElementById('bad-panel-dropdown');
+    const badPanelNameHeading = document.getElementById('bad-panel-name-heading');
+    const badPanelStatusTag = document.getElementById('bad-panel-status-tag');
+    const jsonSerial = document.getElementById('json-serial');
+    const jsonTimestamp = document.getElementById('json-timestamp');
+    const jsonDefectsList = document.getElementById('json-defects-list');
+    const badCellsGrid = document.getElementById('bad-cells-grid');
+    const modalFullPanelImg = document.getElementById('modal-full-panel-img');
+    const modalPanelLoader = document.getElementById('modal-panel-loader');
+    const btnPrevBadPanel = document.getElementById('btn-prev-bad-panel');
+    const btnNextBadPanel = document.getElementById('btn-next-bad-panel');
 
     // Tab Navigation
     tabSingleMode.addEventListener('click', () => {
@@ -104,7 +125,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.target.files.length > 0) handleFileUpload(e.target.files[0]);
     });
 
-    // Upload & Pipeline Execution
+    // Single File Upload & Pipeline Execution
     async function handleFileUpload(file) {
         showLoading('جاري معالجة وتمرير الصورة عبر process_tif وتقطيع 144 خلية...');
         const formData = new FormData();
@@ -283,7 +304,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.addEventListener('resize', () => drawOverlayCanvas());
 
-    // Single Export Options
+    // Export Options
     btnExportZip.addEventListener('click', () => {
         if (!currentSessionId) return;
         window.location.href = `/api/export/zip/${currentSessionId}`;
@@ -328,7 +349,6 @@ document.addEventListener('DOMContentLoaded', () => {
             batchLogSection.style.display = 'block';
             batchLogTbody.innerHTML = '';
 
-            // Cap visible scan preview rows to 500
             const previewPanels = data.panels.slice(0, 500);
             previewPanels.forEach((p, idx) => {
                 const tr = document.createElement('tr');
@@ -386,7 +406,6 @@ document.addEventListener('DOMContentLoaded', () => {
             batchLogSection.style.display = 'block';
             batchLogTbody.innerHTML = '';
 
-            // Cap DOM table rendering to 500 rows to keep UI extremely fast
             const logItems = results.details.slice(0, 500);
             logItems.forEach((item, idx) => {
                 const tr = document.createElement('tr');
@@ -409,6 +428,133 @@ document.addEventListener('DOMContentLoaded', () => {
         } finally {
             hideLoading();
         }
+    });
+
+    // BAD PANELS INSPECTOR MODAL LOGIC
+    btnInspectBadPanels.addEventListener('click', async () => {
+        const folderPath = batchFolderPath.value.trim();
+        if (!folderPath) {
+            alert('يرجى كتابة أو لصق مسار المجلد الرئيسي أولاً.');
+            return;
+        }
+
+        showLoading('جاري تحميل قائمة الألواح المعيبة (bad_models) وتفاصيل الـ JSON...');
+        try {
+            const res = await fetch(`/api/bad-panels-list?folder_path=${encodeURIComponent(folderPath)}`);
+            if (!res.ok) throw new Error('تعذر تحميل بيانات الألواح المعيبة.');
+
+            const data = await res.json();
+            badPanelsList = data.bad_panels;
+
+            if (badPanelsList.length === 0) {
+                alert('ℹ️ لا توجد ألواح معيبة أو عيوب في هذا المجلد.');
+                return;
+            }
+
+            populateBadPanelDropdown();
+            currentBadPanelIndex = 0;
+            renderBadPanelModal(0);
+
+            badPanelsModal.style.display = 'flex';
+        } catch (err) {
+            alert(`❌ خطأ في فتح معاينة الألواح المعيبة: ${err.message}`);
+        } finally {
+            hideLoading();
+        }
+    });
+
+    function populateBadPanelDropdown() {
+        badPanelDropdown.innerHTML = '';
+        badPanelsList.forEach((p, idx) => {
+            const opt = document.createElement('option');
+            opt.value = idx;
+            opt.innerText = `[${idx + 1}/${badPanelsList.length}] ${p.panel_name}`;
+            badPanelDropdown.appendChild(opt);
+        });
+    }
+
+    function renderBadPanelModal(index) {
+        if (index < 0 || index >= badPanelsList.length) return;
+        currentBadPanelIndex = index;
+        const panel = badPanelsList[index];
+
+        badPanelCounter.innerText = `اللوح ${index + 1} من ${badPanelsList.length}`;
+        badPanelDropdown.value = index;
+
+        badPanelNameHeading.innerText = `اللوح: ${panel.panel_name}`;
+        
+        const rawJson = panel.raw_json || {};
+        const jsonKeys = {};
+        Object.keys(rawJson).forEach(k => jsonKeys[k.toLowerCase()] = rawJson[k]);
+
+        jsonSerial.innerText = jsonKeys['serialnumber'] || jsonKeys['panelid'] || panel.panel_name;
+        jsonTimestamp.innerText = jsonKeys['timestamp'] || '-';
+
+        jsonDefectsList.innerHTML = '';
+        const defects = panel.info.defects || jsonKeys['defects'] || [];
+        if (defects.length > 0) {
+            defects.forEach(d => {
+                const tag = document.createElement('span');
+                tag.className = 'defect-tag-badge';
+                tag.innerText = d;
+                jsonDefectsList.appendChild(tag);
+            });
+        } else {
+            jsonDefectsList.innerText = 'لا توجد عيوب مدونة';
+        }
+
+        // Render bad cells images grid
+        badCellsGrid.innerHTML = '';
+        if (panel.bad_cell_files && panel.bad_cell_files.length > 0) {
+            panel.bad_cell_files.forEach(cellFile => {
+                const card = document.createElement('div');
+                card.className = 'bad-cell-card';
+
+                // Extract Cell ID from filename (e.g. 2026-01-07_12-59-28-B09.png -> B09)
+                const filenameParts = cellFile.filename.replace('.png', '').split('-');
+                const cellId = filenameParts[filenameParts.length - 1];
+
+                const img = document.createElement('img');
+                img.src = `/api/cell-file-preview?path=${encodeURIComponent(cellFile.path)}`;
+                img.alt = cellFile.filename;
+
+                const tag = document.createElement('span');
+                tag.className = 'bad-cell-tag';
+                tag.innerText = cellId;
+
+                card.appendChild(img);
+                card.appendChild(tag);
+                badCellsGrid.appendChild(card);
+            });
+        } else {
+            badCellsGrid.innerHTML = '<p style="color:var(--text-muted); font-size:12px;">لم يتم العثور على صور خلايا معيبة متطابقة في هذا المجلد.</p>';
+        }
+
+        // Render full panel image
+        modalPanelLoader.style.display = 'block';
+        modalFullPanelImg.src = `/api/panel-file-preview?path=${encodeURIComponent(panel.tif_path)}`;
+        modalFullPanelImg.onload = () => modalPanelLoader.style.display = 'none';
+        modalFullPanelImg.onerror = () => modalPanelLoader.style.display = 'none';
+    }
+
+    btnPrevBadPanel.addEventListener('click', () => {
+        if (currentBadPanelIndex > 0) renderBadPanelModal(currentBadPanelIndex - 1);
+    });
+
+    btnNextBadPanel.addEventListener('click', () => {
+        if (currentBadPanelIndex < badPanelsList.length - 1) renderBadPanelModal(currentBadPanelIndex + 1);
+    });
+
+    badPanelDropdown.addEventListener('change', (e) => {
+        renderBadPanelModal(parseInt(e.target.value, 10));
+    });
+
+    btnCloseBadModal.addEventListener('click', () => {
+        badPanelsModal.style.display = 'none';
+    });
+
+    badPanelsModal.addEventListener('click', (e) => {
+        if (e.target === badPanelsModal) badPanelsModal.style.display = 'none';
     });
 
     // Helpers
