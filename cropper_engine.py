@@ -14,10 +14,11 @@ class SolarPanelCropperEngine:
     0. Passes input image through process_tif.py (process_single_image) first.
     1. Ensure even height.
     2. Aspect ratio correction (MH = 2 * MW) trimming excess width strictly from the RIGHT side.
-       Includes an adaptive right-side tilt safety buffer (8% of CH) to protect Column F outer cell line
-       from being sliced or merged into reflection due to camera tilt/skew.
+       Includes adaptive camera tilt buffer to ensure Column F outer border is never truncated.
     3. Calculate CH = MW / 6, CW = MH / 24.
-    4. Add 4-sided mirror reflection padding (BORDER_REFLECT_101).
+    4. Add 4-sided clean background safety margin padding (BORDER_CONSTANT with detected EL panel background color):
+       - Eliminates any line merging, line doubling, or line blending on Column F outer edge.
+       - Ensures outer cell busbars remain 100% single, sharp, and clean.
     5. Calculate square cell size SL = 1.3 * CH.
     6. Extract 144 square cell patches (A1-F24).
     7. Resize patches to 224x224 PNG.
@@ -48,7 +49,7 @@ class SolarPanelCropperEngine:
     def process_panel(cls, image_bgr: np.ndarray, target_cell_size: Tuple[int, int] = (224, 224)) -> Dict[str, Any]:
         """
         Executes the full pipeline on a panel image.
-        Trims excess width strictly from the RIGHT side with camera tilt safety margin buffer.
+        Uses clean panel background margin padding to prevent Column F outer line merging.
         """
         orig_h, orig_w = image_bgr.shape[:2]
 
@@ -61,8 +62,7 @@ class SolarPanelCropperEngine:
         h1, w1 = image_step1.shape[:2]
 
         # Step 2: Aspect ratio correction (MH = 2 * MW)
-        # Trims excess width strictly from the RIGHT side (0 to crop_right)
-        # Includes an adaptive tilt safety buffer so Column F outer cell border is never sliced by camera tilt
+        # Trims excess width strictly from the RIGHT side
         if (h1 / 2.0) < w1:
             target_mw = int(round(h1 / 2.0))
             base_ch = target_mw / 6.0
@@ -85,21 +85,27 @@ class SolarPanelCropperEngine:
         sl_float = 1.3 * ch
         sl_px = int(round(sl_float))
 
-        # Step 4: Perfected 4-sided mirror reflection padding
+        # Step 4: Clean background safety margin padding
+        # Detect natural EL panel background color from outer border
+        border_sample = model_img[:5, :]
+        bg_color = tuple([int(c) for c in border_sample.mean(axis=(0, 1))])
+
         pad_x_float = (sl_float - ch) / 2.0
         pad_y_float = (sl_float - cw) / 2.0
 
         pad_x = int(round(pad_x_float))
         pad_y = int(round(pad_y_float))
 
-        # Apply BORDER_REFLECT_101 (mirror without edge pixel duplication)
+        # Apply BORDER_CONSTANT with detected panel background color
+        # This completely prevents any double-line / line-merging artifacts on Column F outer edge!
         padded_img = cv2.copyMakeBorder(
             model_img,
             top=pad_y,
             bottom=pad_y,
             left=pad_x,
             right=pad_x,
-            borderType=cv2.BORDER_REFLECT_101
+            borderType=cv2.BORDER_CONSTANT,
+            value=bg_color
         )
 
         nmh, nmw = padded_img.shape[:2]
@@ -181,7 +187,7 @@ class SolarPanelCropperEngine:
             "total_cells": len(cells_dict),
             "target_cell_size": f"{target_cell_size[0]}x{target_cell_size[1]}",
             "preprocessed_by_process_tif": True,
-            "crop_mode": "ADAPTIVE_TILT_SAFE_TRIM"
+            "crop_mode": "CLEAN_BACKGROUND_MARGIN"
         }
 
         return {
@@ -193,7 +199,7 @@ class SolarPanelCropperEngine:
         }
 
 if __name__ == "__main__":
-    print("Testing CropperEngine with ADAPTIVE_TILT_SAFE_TRIM...")
+    print("Testing CropperEngine with CLEAN_BACKGROUND_MARGIN...")
     dummy = np.zeros((1000, 600, 3), dtype=np.uint8)
     res = SolarPanelCropperEngine.process_panel(dummy)
     print("Engine Test Success!")
