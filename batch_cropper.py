@@ -11,12 +11,12 @@ from cropper_engine import SolarPanelCropperEngine
 def parse_defect_cell_ids(defects_list: List[str]) -> Set[str]:
     """
     Extracts cell IDs (e.g. A1..F24, A01..F24) from a defects array of strings.
-    Example input: ["B03 CellDefect_Microcrack", "C05 CellDefect_BlackCore"]
-    Returns set: {'B3', 'B03', 'C5', 'C05'}
+    Example input: ["B03 [manual]", "C05 CellDefect_BlackCore", "E11"]
+    Returns set: {'B3', 'B03', 'C5', 'C05', 'E11'}
     """
     cell_ids = set()
     for item in defects_list:
-        match = re.search(r'\b([A-F])(0?[1-9]|1[0-9]|2[0-4])\b', item, re.IGNORECASE)
+        match = re.search(r'\b([A-F])(0?[1-9]|1[0-9]|2[0-4])\b', str(item), re.IGNORECASE)
         if match:
             col = match.group(1).upper()
             num = int(match.group(2))
@@ -26,17 +26,23 @@ def parse_defect_cell_ids(defects_list: List[str]) -> Set[str]:
 
 def parse_panel_info(panel_dir: str) -> Dict[str, Any]:
     """
-    Parses info.json if present, or falls back to reading .el file or folder metadata.
+    Parses info.json if present (handling both PascalCase 'Defects' and camelCase 'defects'),
+    or falls back to reading .el file or folder metadata.
     Returns dict: {'is_defective': bool, 'defects': list, 'defective_cell_ids': set}
     """
     json_path = os.path.join(panel_dir, "info.json")
     if os.path.exists(json_path):
         try:
             with open(json_path, "r", encoding="utf-8", errors="ignore") as f:
-                data = json.load(f)
+                raw_data = json.load(f)
+
+            # Case-insensitive key lookup (supports 'Defects', 'defects', 'IsDefective', 'isDefective')
+            data = {str(k).lower(): v for k, v in raw_data.items()}
+
             defects = data.get("defects", [])
-            is_defective = data.get("isDefective", False) or "FAIL" in str(data.get("status", "")).upper()
+            is_defective = data.get("isdefective", False) or "FAIL" in str(data.get("status", "")).upper()
             cell_ids = parse_defect_cell_ids(defects)
+
             return {
                 "is_defective": is_defective,
                 "defects": defects,
