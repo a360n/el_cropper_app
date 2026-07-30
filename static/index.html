@@ -21,7 +21,7 @@
                 </div>
                 <div class="brand-text">
                     <h1>مُقَطِّع ألواح الطاقة الشمسية (EL Cell Cropper)</h1>
-                    <p class="subtitle">تقطيع الألواح الفردية والمجموعات (Good_models & bad_models) وإنشاء مجلد all cell</p>
+                    <p class="subtitle">تقطيع الألواح وإنشاء مجلدات all cell و bad cells وتجميع مجموعات all good/bad cells</p>
                 </div>
             </div>
             
@@ -31,7 +31,7 @@
                     <i class="fa-solid fa-microscope"></i> معاينة وتفتيش لوح واحد
                 </button>
                 <button class="tab-btn" id="tab-batch-mode">
-                    <i class="fa-solid fa-folder-tree"></i> معالجة مجلد الألواح (Batch)
+                    <i class="fa-solid fa-folder-tree"></i> معالجة مجلد الألواح (Batch & Datasets)
                 </button>
             </div>
 
@@ -49,18 +49,17 @@
             
             <!-- MODE 1: SINGLE PANEL VIEW -->
             <div class="mode-container" id="single-mode-container">
-                <!-- Upload Drop Zone -->
                 <div class="upload-dropzone-container" id="dropzone-container">
                     <div class="dropzone-card" id="dropzone-card">
                         <div class="dropzone-icon">
                             <i class="fa-solid fa-file-image"></i>
                         </div>
-                        <h2>اسحب صورة اللوح (.tif) هنا أو انقر للاختيار</h2>
+                        <h2>اسحب صورة اللوح (.tif) هنا أو انقر للااختيار</h2>
                         <p>تمر الصورة أولاً عبر process_tif.py ثم تُقطّع إلى 144 خلية بدقة 224x224</p>
                         <div class="algo-badges">
                             <span class="badge"><i class="fa-solid fa-gears"></i> معالجة process_tif.py</span>
                             <span class="badge"><i class="fa-solid fa-check"></i> نسبة الارتفاع 2:1</span>
-                            <span class="badge"><i class="fa-solid fa-shield-halved"></i> انعكاس متناظر 4 جهات</span>
+                            <span class="badge"><i class="fa-solid fa-shield-halved"></i> هامش أمان خلفية اللوح</span>
                             <span class="badge"><i class="fa-solid fa-grid-2"></i> 144 خلية (A1-F24)</span>
                         </div>
                         <button class="btn btn-outline" onclick="document.getElementById('file-input').click()">
@@ -135,7 +134,7 @@
                                     <span class="stat-val" id="stat-model-dim">-</span>
                                 </div>
                                 <div class="stat-row">
-                                    <span class="stat-label">أبعاد الأمان المعكوسة:</span>
+                                    <span class="stat-label">أبعاد الأمان:</span>
                                     <span class="stat-val" id="stat-padded-dim">-</span>
                                 </div>
                                 <div class="stat-row">
@@ -183,7 +182,7 @@
                                 <label class="toggle-switch">
                                     <input type="checkbox" id="toggle-padding-highlight" checked>
                                     <span class="slider round"></span>
-                                    <span class="toggle-label">هامش الأمان المنعكس</span>
+                                    <span class="toggle-label">هامش أمان الخلفية</span>
                                 </label>
                             </div>
                         </div>
@@ -198,7 +197,7 @@
                 </div>
             </div>
 
-            <!-- MODE 2: BATCH FOLDER PROCESSOR -->
+            <!-- MODE 2: BATCH FOLDER PROCESSOR & DATASET BUILDER -->
             <div class="mode-container" id="batch-mode-container" style="display: none;">
                 <div class="batch-workspace">
                     
@@ -206,8 +205,8 @@
                         <div class="batch-card-title">
                             <i class="fa-solid fa-folder-tree icon-large"></i>
                             <div>
-                                <h2>معالجة مجلد الألواح بالدفعة (Good_models & bad_models)</h2>
-                                <p>يبحث في المجلد الرئيسي عن كل مجلدات الألواح ويقوم بتقطيع كل لوح وحفظ الـ 144 خلية داخل مجلد باسم <strong>all cell</strong> بجانب ملف الـ tif والـ el تلقائياً.</p>
+                                <h2>معالجة مجلد الألواح وتجميع مجموعات الذكاء الاصطناعي (Dataset Builder)</h2>
+                                <p>تقطيع جميع الألواح وإنشاء مجلد <strong>all cell</strong> ومجلد <strong>bad cells</strong> لكل لوح، بالإضافة لتجميع مجلدي <strong>all good cells</strong> و <strong>all bad cells</strong> في جذر المجلد تلقائياً.</p>
                             </div>
                         </div>
 
@@ -220,20 +219,24 @@
                                 <i class="fa-solid fa-magnifying-glass"></i> فحص المجلد
                             </button>
                             <button class="btn btn-success" id="btn-run-batch">
-                                <i class="fa-solid fa-play"></i> بدء التقطيع التلقائي لجميع الألواح
+                                <i class="fa-solid fa-play"></i> بدء التقطيع وتجميع البيانات
                             </button>
                         </div>
                     </div>
 
-                    <!-- Scan Summary Stats Card -->
+                    <!-- Scan & Dataset Summary Cards -->
                     <div class="batch-summary-cards" id="batch-summary-cards" style="display: none;">
                         <div class="summary-card text-blue">
                             <div class="num" id="summary-total-panels">0</div>
                             <div class="label">إجمالي الألواح المكتشفة</div>
                         </div>
                         <div class="summary-card text-green">
-                            <div class="num" id="summary-success-panels">0</div>
-                            <div class="label">الألواح المقطعة بنجاح</div>
+                            <div class="num" id="summary-good-cells">0</div>
+                            <div class="label">خلايا all good cells الجاهزة</div>
+                        </div>
+                        <div class="summary-card text-gold">
+                            <div class="num" id="summary-bad-cells">0</div>
+                            <div class="label">خلايا العيوب all bad cells الجاهزة</div>
                         </div>
                         <div class="summary-card text-red">
                             <div class="num" id="summary-error-panels">0</div>
@@ -243,7 +246,7 @@
 
                     <!-- Progress Log Table -->
                     <div class="batch-log-section" id="batch-log-section" style="display: none;">
-                        <h3><i class="fa-solid fa-list-check"></i> سجل معالجة الألواح ومجلدات all cell</h3>
+                        <h3><i class="fa-solid fa-list-check"></i> سجل معالجة الألواح والمجلدات الناتجة</h3>
                         <div class="table-wrapper">
                             <table class="log-table">
                                 <thead>
@@ -252,7 +255,8 @@
                                         <th>اسم اللوح (الرقم التسلسلي)</th>
                                         <th>التصنيف</th>
                                         <th>الحالة</th>
-                                        <th>مسار مجلد all cell الناتج</th>
+                                        <th>مجلد all cell</th>
+                                        <th>مجلد bad cells (العيوب)</th>
                                     </tr>
                                 </thead>
                                 <tbody id="batch-log-tbody"></tbody>
@@ -269,7 +273,7 @@
         <div class="global-loading-overlay" id="loading-overlay" style="display: none;">
             <div class="spinner-card">
                 <i class="fa-solid fa-gear fa-spin fa-3x"></i>
-                <p id="loading-msg">جاري معالجة وتقطيع الصور...</p>
+                <p id="loading-msg">جاري معالجة وتقطيع الصور وتجميع مجلدات البيانات...</p>
             </div>
         </div>
 

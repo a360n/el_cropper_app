@@ -1,116 +1,112 @@
-/**
- * EL Solar Panel Cell Cropper - Client Application Logic
- */
-
 document.addEventListener('DOMContentLoaded', () => {
-    // Mode Switcher Elements
+    // State Variables
+    let currentSessionId = null;
+    let metadata = null;
+    let gridOverlay = [];
+    let cellsList = [];
+    let currentCellIndex = 0;
+    let isGridVisible = true;
+    let isPaddingHighlightVisible = true;
+
+    // DOM Elements - Mode Switching
     const tabSingleMode = document.getElementById('tab-single-mode');
     const tabBatchMode = document.getElementById('tab-batch-mode');
     const singleModeContainer = document.getElementById('single-mode-container');
     const batchModeContainer = document.getElementById('batch-mode-container');
-    const btnHeaderUpload = document.getElementById('btn-header-upload');
 
-    // Single Mode Elements
+    // DOM Elements - Single Mode
     const fileInput = document.getElementById('file-input');
     const dropzoneCard = document.getElementById('dropzone-card');
-    const dropzoneContainer = document.getElementById('dropzone-container');
     const workspaceSplit = document.getElementById('workspace-split');
+    const dropzoneContainer = document.getElementById('dropzone-container');
     const loadingOverlay = document.getElementById('loading-overlay');
     const loadingMsg = document.getElementById('loading-msg');
-    
-    const currentCellId = document.getElementById('current-cell-id');
-    const currentCellCoords = document.getElementById('current-cell-coords');
+
     const cellPreviewImg = document.getElementById('cell-preview-img');
     const cellLoader = document.getElementById('cell-loader');
+    const currentCellId = document.getElementById('current-cell-id');
+    const currentCellCoords = document.getElementById('current-cell-coords');
+    const cellSelectDropdown = document.getElementById('cell-select-dropdown');
     const btnPrevCell = document.getElementById('btn-prev-cell');
     const btnNextCell = document.getElementById('btn-next-cell');
-    const cellSelectDropdown = document.getElementById('cell-select-dropdown');
     const matrixGrid = document.getElementById('matrix-grid');
-    const cellCountBadge = document.getElementById('cell-count-badge');
-
-    const statProcessTif = document.getElementById('stat-process-tif');
-    const statOrigDim = document.getElementById('stat-orig-dim');
-    const statModelDim = document.getElementById('stat-model-dim');
-    const statPaddedDim = document.getElementById('stat-padded-dim');
-    const statCH = document.getElementById('stat-ch');
-    const statCW = document.getElementById('stat-cw');
-    const statSL = document.getElementById('stat-sl');
-
-    const btnExportZip = document.getElementById('btn-export-zip');
-    const btnExportFolder = document.getElementById('btn-export-folder');
-    const exportStatusMsg = document.getElementById('export-status-msg');
 
     const fullPanelImg = document.getElementById('full-panel-img');
     const gridCanvas = document.getElementById('grid-canvas');
     const toggleGridOverlay = document.getElementById('toggle-grid-overlay');
     const togglePaddingHighlight = document.getElementById('toggle-padding-highlight');
 
-    // Batch Mode Elements
+    const btnExportZip = document.getElementById('btn-export-zip');
+    const btnExportFolder = document.getElementById('btn-export-folder');
+    const exportStatusMsg = document.getElementById('export-status-msg');
+
+    // DOM Elements - Stats
+    const statProcessTif = document.getElementById('stat-process-tif');
+    const statOrigDim = document.getElementById('stat-orig-dim');
+    const statModelDim = document.getElementById('stat-model-dim');
+    const statPaddedDim = document.getElementById('stat-padded-dim');
+    const statCh = document.getElementById('stat-ch');
+    const statCw = document.getElementById('stat-cw');
+    const statSl = document.getElementById('stat-sl');
+
+    // DOM Elements - Batch Mode
     const batchFolderPath = document.getElementById('batch-folder-path');
     const btnScanFolder = document.getElementById('btn-scan-folder');
     const btnRunBatch = document.getElementById('btn-run-batch');
     const batchSummaryCards = document.getElementById('batch-summary-cards');
-    const summaryTotalPanels = document.getElementById('summary-total-panels');
-    const summarySuccessPanels = document.getElementById('summary-success-panels');
-    const summaryErrorPanels = document.getElementById('summary-error-panels');
     const batchLogSection = document.getElementById('batch-log-section');
+    const summaryTotalPanels = document.getElementById('summary-total-panels');
+    const summaryGoodCells = document.getElementById('summary-good-cells');
+    const summaryBadCells = document.getElementById('summary-bad-cells');
+    const summaryErrorPanels = document.getElementById('summary-error-panels');
     const batchLogTbody = document.getElementById('batch-log-tbody');
 
-    // State Variables
-    let currentSessionId = null;
-    let currentCellList = [];
-    let selectedCellIndex = 0;
-    let gridOverlayData = [];
-    let metadata = {};
-
+    // Tab Navigation
     tabSingleMode.addEventListener('click', () => {
         tabSingleMode.classList.add('active');
         tabBatchMode.classList.remove('active');
-        singleModeContainer.style.display = 'flex';
+        singleModeContainer.style.display = 'block';
         batchModeContainer.style.display = 'none';
-        btnHeaderUpload.style.display = 'inline-flex';
     });
 
     tabBatchMode.addEventListener('click', () => {
         tabBatchMode.classList.add('active');
         tabSingleMode.classList.remove('active');
         singleModeContainer.style.display = 'none';
-        batchModeContainer.style.display = 'flex';
-        btnHeaderUpload.style.display = 'none';
+        batchModeContainer.style.display = 'block';
     });
 
-    fileInput.addEventListener('change', (e) => {
-        if (e.target.files.length > 0) {
-            handleFileUpload(e.target.files[0]);
-        }
+    // File Drag & Drop Handlers
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        dropzoneCard.addEventListener(eventName, preventDefaults, false);
     });
+
+    function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
 
     ['dragenter', 'dragover'].forEach(eventName => {
-        dropzoneCard.addEventListener(eventName, (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            dropzoneCard.classList.add('drag-over');
-        });
+        dropzoneCard.addEventListener(eventName, () => dropzoneCard.classList.add('drag-over'), false);
     });
 
     ['dragleave', 'drop'].forEach(eventName => {
-        dropzoneCard.addEventListener(eventName, (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            dropzoneCard.classList.remove('drag-over');
-        });
+        dropzoneCard.addEventListener(eventName, () => dropzoneCard.classList.remove('drag-over'), false);
     });
 
     dropzoneCard.addEventListener('drop', (e) => {
-        const files = e.dataTransfer.files;
-        if (files.length > 0) {
-            handleFileUpload(files[0]);
-        }
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        if (files.length > 0) handleFileUpload(files[0]);
     });
 
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) handleFileUpload(e.target.files[0]);
+    });
+
+    // Upload & Pipeline Execution
     async function handleFileUpload(file) {
-        showLoading("جاري تمرير الصورة عبر process_tif.py وتقطيعها...");
-        
+        showLoading('جاري معالجة وتمرير الصورة عبر process_tif وتقطيع 144 خلية...');
         const formData = new FormData();
         formData.append('file', file);
 
@@ -120,231 +116,174 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: formData
             });
 
-            const data = await response.json();
-
             if (!response.ok) {
-                throw new Error(data.detail || "خطأ في المعالجة");
+                const errData = await response.json();
+                throw new Error(errData.detail || 'خطأ في معالجة الملف.');
             }
 
+            const data = await response.json();
             currentSessionId = data.session_id;
             metadata = data.metadata;
-            gridOverlayData = data.grid_overlay;
-            currentCellList = generateOrderedCellList(data.cells);
+            gridOverlay = data.grid_overlay;
+            cellsList = data.cells;
 
-            statProcessTif.textContent = metadata.preprocessed_by_process_tif ? "نعم (مفعّل)" : "لا";
-            statOrigDim.textContent = `${metadata.original_dimensions.width} × ${metadata.original_dimensions.height} px`;
-            statModelDim.textContent = `${metadata.model_dimensions.width} × ${metadata.model_dimensions.height} px`;
-            statPaddedDim.textContent = `${metadata.padded_dimensions.width} × ${metadata.padded_dimensions.height} px`;
-            statCH.textContent = `${metadata.base_cell.CH.toFixed(2)} px`;
-            statCW.textContent = `${metadata.base_cell.CW.toFixed(2)} px`;
-            statSL.textContent = `${metadata.square_length_SL.toFixed(2)} px (${metadata.square_length_px} px)`;
-            cellCountBadge.textContent = `${metadata.total_cells} خلية`;
-
-            buildMatrixGridUI();
-            buildDropdownUI();
-
-            fullPanelImg.src = `/api/panel-image/${currentSessionId}`;
-            fullPanelImg.onload = () => {
-                resizeCanvasToImage();
-                drawCanvasOverlay();
-            };
-
-            dropzoneContainer.style.display = 'none';
-            workspaceSplit.style.display = 'flex';
-
-            selectCellByIndex(0);
-            hideLoading();
-
+            renderWorkspace();
         } catch (err) {
+            alert(`❌ فشل معالجة الصورة: ${err.message}`);
+        } finally {
             hideLoading();
-            alert("حدث خطأ أثناء رفع وتحليل الصورة: " + err.message);
         }
     }
 
-    function generateOrderedCellList(cellsSummary) {
-        const map = {};
-        cellsSummary.forEach(c => map[c.id] = c);
+    function renderWorkspace() {
+        dropzoneContainer.style.display = 'none';
+        workspaceSplit.style.display = 'flex';
 
-        const list = [];
-        const cols = ['A', 'B', 'C', 'D', 'E', 'F'];
-        for (let r = 1; r <= 24; r++) {
-            for (let c = 0; c < 6; c++) {
-                const id = `${cols[c]}${r}`;
-                if (map[id]) list.push(map[id]);
-            }
-        }
-        return list;
+        statProcessTif.innerText = metadata.preprocessed_by_process_tif ? 'نعم (مفعّل)' : 'لا';
+        statOrigDim.innerText = `${metadata.original_dimensions.width} × ${metadata.original_dimensions.height} px`;
+        statModelDim.innerText = `${metadata.model_dimensions.width} × ${metadata.model_dimensions.height} px`;
+        statPaddedDim.innerText = `${metadata.padded_dimensions.width} × ${metadata.padded_dimensions.height} px`;
+        statCh.innerText = `${metadata.base_cell.CH.toFixed(2)} px`;
+        statCw.innerText = `${metadata.base_cell.CW.toFixed(2)} px`;
+        statSl.innerText = `${metadata.square_length_SL.toFixed(2)} px (${metadata.square_length_px}px)`;
+
+        fullPanelImg.src = `/api/panel-image/${currentSessionId}`;
+        fullPanelImg.onload = () => drawOverlayCanvas();
+
+        buildMatrixGrid();
+        populateCellDropdown();
+
+        currentCellIndex = 0;
+        selectCellByIndex(0);
     }
 
-    function buildMatrixGridUI() {
+    function populateCellDropdown() {
+        cellSelectDropdown.innerHTML = '';
+        cellsList.forEach((cell, idx) => {
+            const opt = document.createElement('option');
+            opt.value = idx;
+            opt.innerText = `خلية ${cell.id} (${cell.col}${cell.row})`;
+            cellSelectDropdown.appendChild(opt);
+        });
+    }
+
+    function buildMatrixGrid() {
         matrixGrid.innerHTML = '';
-        currentCellList.forEach((cell, idx) => {
+        cellsList.forEach((cell, idx) => {
             const btn = document.createElement('button');
             btn.className = 'matrix-cell-btn';
-            btn.textContent = cell.id;
+            btn.innerText = cell.id;
             btn.dataset.index = idx;
             btn.addEventListener('click', () => selectCellByIndex(idx));
             matrixGrid.appendChild(btn);
         });
     }
 
-    function buildDropdownUI() {
-        cellSelectDropdown.innerHTML = '';
-        currentCellList.forEach((cell, idx) => {
-            const opt = document.createElement('option');
-            opt.value = idx;
-            opt.textContent = `${cell.id} (سطر ${cell.row})`;
-            cellSelectDropdown.appendChild(opt);
-        });
-    }
-
-    cellSelectDropdown.addEventListener('change', (e) => {
-        selectCellByIndex(parseInt(e.target.value));
-    });
-
     function selectCellByIndex(index) {
-        if (index < 0 || index >= currentCellList.length) return;
-        selectedCellIndex = index;
-        const cell = currentCellList[selectedCellIndex];
+        if (index < 0 || index >= cellsList.length) return;
+        currentCellIndex = index;
+        const cell = cellsList[index];
 
-        currentCellId.textContent = cell.id;
-        currentCellCoords.textContent = `العمود ${cell.col} | السطر ${cell.row} (${selectedCellIndex + 1} من 144)`;
+        currentCellId.innerText = cell.id;
+        currentCellCoords.innerText = `السطر ${cell.row} | العمود ${cell.col}`;
+        cellSelectDropdown.value = index;
 
-        cellSelectDropdown.value = selectedCellIndex;
+        cellLoader.style.display = 'block';
+        cellPreviewImg.src = `/api/cell-image/${currentSessionId}/${cell.id}`;
+        cellPreviewImg.onload = () => cellLoader.style.display = 'none';
 
-        const buttons = matrixGrid.querySelectorAll('.matrix-cell-btn');
-        buttons.forEach((btn, idx) => {
-            if (idx === selectedCellIndex) {
-                btn.classList.add('active');
-                btn.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-            } else {
-                btn.classList.remove('active');
-            }
+        document.querySelectorAll('.matrix-cell-btn').forEach((btn, idx) => {
+            btn.classList.toggle('active', idx === index);
         });
 
-        cellLoader.style.display = 'flex';
-        cellPreviewImg.src = `/api/cell-image/${currentSessionId}/${cell.id}`;
-        cellPreviewImg.onload = () => {
-            cellLoader.style.display = 'none';
-        };
-
-        drawCanvasOverlay();
+        drawOverlayCanvas();
     }
 
     btnPrevCell.addEventListener('click', () => {
-        if (selectedCellIndex > 0) {
-            selectCellByIndex(selectedCellIndex - 1);
-        } else {
-            selectCellByIndex(currentCellList.length - 1);
-        }
+        if (currentCellIndex > 0) selectCellByIndex(currentCellIndex - 1);
     });
 
     btnNextCell.addEventListener('click', () => {
-        if (selectedCellIndex < currentCellList.length - 1) {
-            selectCellByIndex(selectedCellIndex + 1);
-        } else {
-            selectCellByIndex(0);
-        }
+        if (currentCellIndex < cellsList.length - 1) selectCellByIndex(currentCellIndex + 1);
     });
 
-    document.addEventListener('keydown', (e) => {
-        if (singleModeContainer.style.display === 'none' || workspaceSplit.style.display === 'none') return;
-        if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
-            btnPrevCell.click();
-        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
-            btnNextCell.click();
-        }
+    cellSelectDropdown.addEventListener('change', (e) => {
+        selectCellByIndex(parseInt(e.target.value, 10));
     });
 
-    function resizeCanvasToImage() {
-        gridCanvas.width = fullPanelImg.naturalWidth;
-        gridCanvas.height = fullPanelImg.naturalHeight;
-        gridCanvas.style.width = fullPanelImg.clientWidth + 'px';
-        gridCanvas.style.height = fullPanelImg.clientHeight + 'px';
-    }
+    // Canvas Overlay Renderer
+    function drawOverlayCanvas() {
+        if (!metadata || !fullPanelImg.complete) return;
 
-    window.addEventListener('resize', () => {
-        if (fullPanelImg.complete && fullPanelImg.naturalWidth > 0) {
-            resizeCanvasToImage();
-            drawCanvasOverlay();
-        }
-    });
+        const nw = metadata.padded_dimensions.width;
+        const nh = metadata.padded_dimensions.height;
 
-    toggleGridOverlay.addEventListener('change', drawCanvasOverlay);
-    togglePaddingHighlight.addEventListener('change', drawCanvasOverlay);
+        gridCanvas.width = fullPanelImg.clientWidth;
+        gridCanvas.height = fullPanelImg.clientHeight;
 
-    function drawCanvasOverlay() {
-        if (!gridCanvas.width || !gridCanvas.height) return;
         const ctx = gridCanvas.getContext('2d');
         ctx.clearRect(0, 0, gridCanvas.width, gridCanvas.height);
 
-        const padX = metadata.padding.pad_x;
-        const padY = metadata.padding.pad_y;
+        const scaleX = gridCanvas.width / nw;
+        const scaleY = gridCanvas.height / nh;
 
-        if (togglePaddingHighlight.checked) {
-            ctx.fillStyle = 'rgba(239, 68, 68, 0.15)';
-            ctx.fillRect(0, 0, gridCanvas.width, padY);
-            ctx.fillRect(0, gridCanvas.height - padY, gridCanvas.width, padY);
-            ctx.fillRect(0, padY, padX, gridCanvas.height - 2 * padY);
-            ctx.fillRect(gridCanvas.width - padX, padY, padX, gridCanvas.height - 2 * padY);
+        const px = metadata.padding.pad_x * scaleX;
+        const py = metadata.padding.pad_y * scaleY;
+        const pw = metadata.model_dimensions.width * scaleX;
+        const ph = metadata.model_dimensions.height * scaleY;
 
-            ctx.strokeStyle = '#ef4444';
-            ctx.lineWidth = 2;
-            ctx.setLineDash([6, 6]);
-            ctx.strokeRect(padX, padY, metadata.model_dimensions.width, metadata.model_dimensions.height);
+        if (isPaddingHighlightVisible) {
+            ctx.fillStyle = 'rgba(255, 171, 0, 0.18)';
+            ctx.fillRect(0, 0, gridCanvas.width, py);
+            ctx.fillRect(0, gridCanvas.height - py, gridCanvas.width, py);
+            ctx.fillRect(0, py, px, ph);
+            ctx.fillRect(gridCanvas.width - px, py, px, ph);
+
+            ctx.strokeStyle = '#ffab00';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([4, 4]);
+            ctx.strokeRect(px, py, pw, ph);
             ctx.setLineDash([]);
         }
 
-        if (toggleGridOverlay.checked && gridOverlayData.length > 0) {
-            gridOverlayData.forEach((box) => {
-                ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
-                ctx.lineWidth = 1;
-                ctx.strokeRect(box.x, box.y, box.w, box.h);
+        if (isGridVisible) {
+            ctx.strokeStyle = 'rgba(0, 229, 255, 0.45)';
+            ctx.lineWidth = 1;
+
+            gridOverlay.forEach((cell, idx) => {
+                const x = cell.x * scaleX;
+                const y = cell.y * scaleY;
+                const w = cell.w * scaleX;
+                const h = cell.h * scaleY;
+
+                if (idx === currentCellIndex) {
+                    ctx.fillStyle = 'rgba(0, 230, 118, 0.25)';
+                    ctx.fillRect(x, y, w, h);
+                    ctx.strokeStyle = '#00e676';
+                    ctx.lineWidth = 2.5;
+                    ctx.strokeRect(x, y, w, h);
+                } else {
+                    ctx.strokeStyle = 'rgba(0, 229, 255, 0.45)';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(x, y, w, h);
+                }
             });
-        }
-
-        if (currentCellList.length > 0 && selectedCellIndex < currentCellList.length) {
-            const activeCell = currentCellList[selectedCellIndex];
-            const box = activeCell.bbox;
-
-            ctx.fillStyle = 'rgba(6, 182, 212, 0.25)';
-            ctx.fillRect(box.x, box.y, box.w, box.h);
-
-            ctx.strokeStyle = '#06b6d4';
-            ctx.lineWidth = 4;
-            ctx.strokeRect(box.x, box.y, box.w, box.h);
-
-            ctx.fillStyle = '#06b6d4';
-            const tagW = 50;
-            const tagH = 26;
-            ctx.fillRect(box.x, box.y, tagW, tagH);
-
-            ctx.fillStyle = '#0f172a';
-            ctx.font = 'bold 16px Inter, sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(activeCell.id, box.x + tagW / 2, box.y + tagH / 2);
         }
     }
 
-    gridCanvas.addEventListener('click', (e) => {
-        const rect = gridCanvas.getBoundingClientRect();
-        const scaleX = gridCanvas.width / rect.width;
-        const scaleY = gridCanvas.height / rect.height;
-
-        const clickX = (e.clientX - rect.left) * scaleX;
-        const clickY = (e.clientY - rect.top) * scaleY;
-
-        for (let i = 0; i < currentCellList.length; i++) {
-            const cell = currentCellList[i];
-            const b = cell.bbox;
-            if (clickX >= b.x && clickX <= b.x + b.w && clickY >= b.y && clickY <= b.y + b.h) {
-                selectCellByIndex(i);
-                break;
-            }
-        }
+    toggleGridOverlay.addEventListener('change', (e) => {
+        isGridVisible = e.target.checked;
+        drawOverlayCanvas();
     });
 
+    togglePaddingHighlight.addEventListener('change', (e) => {
+        isPaddingHighlightVisible = e.target.checked;
+        drawOverlayCanvas();
+    });
+
+    window.addEventListener('resize', () => drawOverlayCanvas());
+
+    // Single Export Options
     btnExportZip.addEventListener('click', () => {
         if (!currentSessionId) return;
         window.location.href = `/api/export/zip/${currentSessionId}`;
@@ -352,152 +291,129 @@ document.addEventListener('DOMContentLoaded', () => {
 
     btnExportFolder.addEventListener('click', async () => {
         if (!currentSessionId) return;
-        
-        exportStatusMsg.textContent = "جاري حفظ الصور في المجلد المحلي...";
-        exportStatusMsg.style.color = "var(--accent-blue)";
-
+        showLoading('جاري الحفظ في مجلد exported_cells المحلي...');
         try {
-            const response = await fetch(`/api/export/folder/${currentSessionId}`, {
-                method: 'POST'
-            });
-            const res = await response.json();
-
-            if (response.ok) {
-                exportStatusMsg.textContent = `تم حفظ 144 خلية بنجاح في:\n${res.target_directory}`;
-                exportStatusMsg.style.color = "var(--accent-green)";
-            } else {
-                throw new Error(res.detail || "فشل التصدير للمجلد");
-            }
+            const res = await fetch(`/api/export/folder/${currentSessionId}`, { method: 'POST' });
+            const data = await res.json();
+            exportStatusMsg.style.color = '#00e676';
+            exportStatusMsg.innerText = `✅ ${data.message} (في ${data.target_directory})`;
         } catch (err) {
-            exportStatusMsg.textContent = "خطأ في التصدير: " + err.message;
-            exportStatusMsg.style.color = "var(--accent-red)";
+            exportStatusMsg.style.color = '#ff5252';
+            exportStatusMsg.innerText = `❌ خطأ في الحفظ: ${err.message}`;
+        } finally {
+            hideLoading();
         }
     });
 
-    // ----------------------------------------------------
-    // MODE 2: BATCH FOLDER PROCESSING LOGIC (High Scale Optimized)
-    // ----------------------------------------------------
+    // BATCH MODE HANDLERS & SCANNER
     btnScanFolder.addEventListener('click', async () => {
-        const path = batchFolderPath.value.trim();
-        if (!path) {
-            alert("يرجى إدخال مسار المجلد الرئيسي أولاً.");
+        const folderPath = batchFolderPath.value.trim();
+        if (!folderPath) {
+            alert('يرجى كتابة أو لصق مسار المجلد الرئيسي أولاً.');
             return;
         }
 
-        showLoading("جاري فحص المجلد وإحصاء الألواح...");
-
+        showLoading('جاري فحص المجلد الرئيسي واكتشاف الألواح ومجلدات Good_models / bad_models...');
         try {
-            const res = await fetch(`/api/scan-folder?folder_path=${encodeURIComponent(path)}`);
+            const res = await fetch(`/api/scan-folder?folder_path=${encodeURIComponent(folderPath)}`);
+            if (!res.ok) throw new Error('تعذر العثور على المجلد المدمج.');
+
             const data = await res.json();
-            hideLoading();
-
-            if (!res.ok) {
-                throw new Error(data.detail || "فشل فحص المجلد");
-            }
-
-            summaryTotalPanels.textContent = Number(data.total_panels).toLocaleString();
-            summarySuccessPanels.textContent = '0';
-            summaryErrorPanels.textContent = '0';
             batchSummaryCards.style.display = 'grid';
+            summaryTotalPanels.innerText = data.total_panels.toLocaleString();
+            summaryGoodCells.innerText = '0';
+            summaryBadCells.innerText = '0';
+            summaryErrorPanels.innerText = '0';
 
-            renderLogTable(data.panels.map(p => ({
-                panel_name: p.panel_name,
-                category: p.category,
-                target_dir: `${p.panel_dir}/all cell`,
-                status: 'PENDING'
-            })));
-            batchLogSection.style.display = 'flex';
+            batchLogSection.style.display = 'block';
+            batchLogTbody.innerHTML = '';
 
-            alert(`تم فحص المجلد بنجاح! العثور على ${data.total_panels.toLocaleString()} لوح شمسي جاهز للتقطيع.`);
+            // Cap visible scan preview rows to 500
+            const previewPanels = data.panels.slice(0, 500);
+            previewPanels.forEach((p, idx) => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${idx + 1}</td>
+                    <td><strong>${p.panel_name}</strong></td>
+                    <td><span class="badge ${p.category === 'Good_models' ? 'badge-good' : 'badge-bad'}">${p.category}</span></td>
+                    <td><span class="status-tag status-pending">في الانتظار</span></td>
+                    <td>all cell/</td>
+                    <td>${p.category === 'bad_models' ? 'bad cells/' : '-'}</td>
+                `;
+                batchLogTbody.appendChild(tr);
+            });
 
+            alert(`✅ اكتمل الفحص! تم إيجاد ${data.total_panels.toLocaleString()} لوح جاهز للمعالجة.`);
         } catch (err) {
+            alert(`❌ خطأ في فحص المجلد: ${err.message}`);
+        } finally {
             hideLoading();
-            alert("خطأ أثناء فحص المجلد: " + err.message);
         }
     });
 
     btnRunBatch.addEventListener('click', async () => {
-        const path = batchFolderPath.value.trim();
-        if (!path) {
-            alert("يرجى إدخال مسار المجلد الرئيسي أولاً.");
+        const folderPath = batchFolderPath.value.trim();
+        if (!folderPath) {
+            alert('يرجى كتابة أو لصق مسار المجلد الرئيسي أولاً.');
             return;
         }
 
-        showLoading("جاري التقطيع التلقائي للألواح وإنشاء مجلدات all cell (قد يستغرق بعض الوقت للكميات الضخمة)...");
+        showLoading('جاري بدء التقطيع الشامل، وتوليد مجلدات all cell و bad cells وتجميع all good/bad cells...');
 
         try {
             const formData = new FormData();
-            formData.append('folder_path', path);
+            formData.append('folder_path', folderPath);
 
             const res = await fetch('/api/batch-process', {
                 method: 'POST',
                 body: formData
             });
 
-            const data = await res.json();
-            hideLoading();
-
             if (!res.ok) {
-                throw new Error(data.detail || "خطأ أثناء المعالجة التلقائية");
+                const errData = await res.json();
+                throw new Error(errData.detail || 'حدث خطأ في معالجة الدفعة.');
             }
 
+            const data = await res.json();
             const results = data.results;
-            summaryTotalPanels.textContent = Number(results.total_panels).toLocaleString();
-            summarySuccessPanels.textContent = Number(results.success_count).toLocaleString();
-            summaryErrorPanels.textContent = Number(results.error_count).toLocaleString();
+
             batchSummaryCards.style.display = 'grid';
+            summaryTotalPanels.innerText = results.total_panels.toLocaleString();
+            summaryGoodCells.innerText = results.total_good_cells_aggregated.toLocaleString();
+            summaryBadCells.innerText = results.total_bad_cells_aggregated.toLocaleString();
+            summaryErrorPanels.innerText = results.error_count;
 
-            renderLogTable(results.details);
-            batchLogSection.style.display = 'flex';
+            batchLogSection.style.display = 'block';
+            batchLogTbody.innerHTML = '';
 
-            const totalCells = (results.success_count * 144).toLocaleString();
-            alert(`🏁 اكتملت المعالجة الكلية بالدفعة!\n✅ تمت معالجة ${results.success_count.toLocaleString()} لوح بنجاح.\n📦 إجمالي الخلايا الناتجة: ${totalCells} صورة PNG.`);
+            // Cap DOM table rendering to 500 rows to keep UI extremely fast
+            const logItems = results.details.slice(0, 500);
+            logItems.forEach((item, idx) => {
+                const tr = document.createElement('tr');
+                const isSuccess = item.status === 'SUCCESS';
+                tr.innerHTML = `
+                    <td>${idx + 1}</td>
+                    <td><strong>${item.panel_name}</strong></td>
+                    <td><span class="badge ${item.category === 'Good_models' ? 'badge-good' : 'badge-bad'}">${item.category}</span></td>
+                    <td><span class="status-tag ${isSuccess ? 'status-success' : 'status-error'}">${isSuccess ? 'تمت بنجاح ✅' : 'خطأ ❌'}</span></td>
+                    <td>${isSuccess ? `${item.cells_count} صورة` : '-'}</td>
+                    <td>${item.bad_cells_count > 0 ? `<span class="badge badge-bad">${item.bad_cells_count} خلايا معيبة</span>` : '-'}</td>
+                `;
+                batchLogTbody.appendChild(tr);
+            });
+
+            alert(`🏁 اكتملت المعالجة وتجميع البيانات بنجاح!\n\n✅ الألواح الناجحة: ${results.success_count.toLocaleString()}\n📁 إجمالي all good cells: ${results.total_good_cells_aggregated.toLocaleString()}\n📁 إجمالي all bad cells: ${results.total_bad_cells_aggregated.toLocaleString()}`);
 
         } catch (err) {
+            alert(`❌ خطأ أثناء تشغيل الدفعة: ${err.message}`);
+        } finally {
             hideLoading();
-            alert("حدث خطأ أثناء معالجة الدفعة: " + err.message);
         }
     });
 
-    // Efficient Table Log Rendering (limits DOM rendering for large lists like 17,000+ items)
-    function renderLogTable(items) {
-        batchLogTbody.innerHTML = '';
-        const limit = Math.min(items.length, 500); // Display top 500 rows for fast browser UI rendering
-        
-        for (let idx = 0; idx < limit; idx++) {
-            const d = items[idx];
-            const tr = document.createElement('tr');
-            
-            let statusTag = `<span class="text-secondary">بانتظار التقطيع</span>`;
-            if (d.status === 'SUCCESS') {
-                statusTag = `<span class="tag-status-success"><i class="fa-solid fa-circle-check"></i> مكتمل (144 خلية)</span>`;
-            } else if (d.status === 'ERROR') {
-                statusTag = `<span class="tag-status-error"><i class="fa-solid fa-circle-xmark"></i> خطأ: ${d.error || ''}</span>`;
-            }
-
-            tr.innerHTML = `
-                <td>${idx + 1}</td>
-                <td><strong>${d.panel_name}</strong></td>
-                <td><span class="badge">${d.category}</span></td>
-                <td>${statusTag}</td>
-                <td><code style="color:var(--accent-cyan)">${d.target_dir}</code></td>
-            `;
-            batchLogTbody.appendChild(tr);
-        }
-
-        if (items.length > 500) {
-            const trNotice = document.createElement('tr');
-            trNotice.innerHTML = `
-                <td colspan="5" style="text-align:center; color: var(--accent-blue); padding: 12px;">
-                    ℹ️ يتم عرض أول 500 لوح من إجمالي ${items.length.toLocaleString()} لوح للحفاظ على سرعة المتصفح. جميع المجلدات تم تقطيعها وحفظها على القرص الصلب.
-                </td>
-            `;
-            batchLogTbody.appendChild(trNotice);
-        }
-    }
-
+    // Helpers
     function showLoading(msg) {
-        loadingMsg.textContent = msg || "جاري المعالجة...";
+        loadingMsg.innerText = msg;
         loadingOverlay.style.display = 'flex';
     }
 
