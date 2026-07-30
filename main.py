@@ -4,6 +4,7 @@ import uuid
 import json
 import zipfile
 import shutil
+import re
 import cv2
 from typing import Dict, Any, Optional, List
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, BackgroundTasks
@@ -13,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from cropper_engine import SolarPanelCropperEngine
 from batch_cropper import process_batch_directory, find_panel_folders, parse_panel_info
 
-app = FastAPI(title="EL Solar Panel Cell Cropper API", version="3.0.0")
+app = FastAPI(title="EL Solar Panel Cell Cropper API", version="3.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,24 +27,215 @@ app.add_middleware(
 SESSION_CACHE: Dict[str, Dict[str, Any]] = {}
 CATEGORIES = ["Cracks", "Ribbons", "Misalignment", "Impurity", "Missing", "other"]
 
+# Generate ordered list of 144 positions: A1..A24, B1..B24, ..., F1..F24
+ALL_POSITIONS = []
+for c in ['A', 'B', 'C', 'D', 'E', 'F']:
+    for r in range(1, 25):
+        ALL_POSITIONS.append(f"{c}{r}")
+
 EXPORT_BASE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "exported_cells")
 os.makedirs(EXPORT_BASE_DIR, exist_ok=True)
 
-# ----------------- BAD CELLS SORTER API -----------------
+# ----------------- BALANCED GOOD CELLS SORTER (3168 & not good) API -----------------
 
-@app.post("/api/sorter/init")
-async def init_bad_cells_sorter(folder_path: str = Form(...)):
+@app.post("/api/good-sorter/init")
+async def init_good_cells_sorter(folder_path: str = Form(...)):
     """
-    Initializes Bad Cells Sorter for 'all bad cells' folder:
-    1. Creates 6 defect subfolders: Cracks, Ribbons, Misalignment, Impurity, Missing, other.
-    2. Scans all PNG cell images in 'all bad cells' (root and subfolders).
-    3. Returns list of cell items with parsed panel ID, cell ID, current category, and counts.
+    Initializes Balanced Good Cells Filter for 'all good cells' folder:
+    1. Creates subfolders '3168' and 'not good'.
+    2. Scans all PNG cell images in 'all good cells' (root, 3168, not good).
+    3. Calculates accepted count per position (target 22 per position A1-F24).
+    4. Determines active position (A1 -> F24) and returns cell list and stats.
     """
     folder_path = folder_path.strip('"\'')
     if not os.path.exists(folder_path):
         raise HTTPException(status_code=404, detail=f"المجلد غير موجود: {folder_path}")
 
-    # Create the 6 defect subfolders
+    dir_3168 = os.path.join(folder_path, "3168")
+    dir_not_good = os.path.join(folder_path, "not good")
+    os.makedirs(dir_3168, exist_ok=True)
+    os.makedirs(dir_not_good, exist_ok=True)
+
+    # Initialize accepted count per position
+    pos_accepted_counts = {p: 0 for p in ALL_POSITIONS}
+    pos_rejected_counts = {p: 0 for p in ALL_POSITIONS}
+
+    # Count files in '3168' (accepted)
+    for f in os.listdir(dir_3168):
+        if f.lower().endswith(('.png', '.jpg', '.jpeg')):
+            parts = f.replace('.png', '').replace('.jpg', '').replace('.jpeg', '').split('-')
+            cell_id = parts[-1] if len(parts) > 1 else ""
+            if cell_id in pos_accepted_counts:
+                pos_accepted_counts[cell_id] += 1
+
+    # Count files in 'not good' (rejected)
+    for f in os.listdir(dir_not_good):
+        if f.lower().endswith(('.png', '.jpg', '.jpeg')):
+            parts = f.replace('.png', '').replace('.jpg', '').replace('.jpeg', '').split('-')
+            cell_id = parts[-1] if len(parts) > 1 else ""
+            if cell_id in pos_rejected_counts:
+                pos_rejected_counts[cell_id] += 1
+
+    # Collect all available cell files grouped by position
+    all_cells_list = []
+
+    # 1. Unclassified files in root
+    for f in sorted(os.listdir(folder_path)):
+        full_p = os.path.join(folder_path, f)
+        if os.path.isfile(full_p) and f.lower().endswith(('.png', '.jpg', '.jpeg')):
+            parts = f.replace('.png', '').replace('.jpg', '').replace('.jpeg', '').split('-')
+            cell_id = parts[-1] if len(parts) > 1 else "A1"
+            panel_name = "-".join(parts[:-1]) if len(parts) > 1 else "Unknown"
+
+            all_cells_list.append({
+                "filename": f,
+                "full_path": full_p,
+                "panel_name": panel_name,
+                "cell_id": cell_id,
+                "status": "unclassified",
+                "rel_folder": "all good cells/"
+            })
+
+    # 2. Accepted files in '3168'
+    for f in sorted(os.listdir(dir_3168)):
+        full_p = os.path.join(dir_3168, f)
+        if os.path.isfile(full_p) and f.lower().endswith(('.png', '.jpg', '.jpeg')):
+            parts = f.replace('.png', '').replace('.jpg', '').replace('.jpeg', '').split('-')
+            cell_id = parts[-1] if len(parts) > 1 else "A1"
+            panel_name = "-".join(parts[:-1]) if len(parts) > 1 else "Unknown"
+
+            all_cells_list.append({
+                "filename": f,
+                "full_path": full_p,
+                "panel_name": panel_name,
+                "cell_id": cell_id,
+                "status": "accepted",
+                "rel_folder": "all good cells/3168/"
+            })
+
+    # 3. Rejected files in 'not good'
+    for f in sorted(os.listdir(dir_not_good)):
+        full_p = os.path.join(dir_not_good, f)
+        if os.path.isfile(full_p) and f.lower().endswith(('.png', '.jpg', '.jpeg')):
+            parts = f.replace('.png', '').replace('.jpg', '').replace('.jpeg', '').split('-')
+            cell_id = parts[-1] if len(parts) > 1 else "A1"
+            panel_name = "-".join(parts[:-1]) if len(parts) > 1 else "Unknown"
+
+            all_cells_list.append({
+                "filename": f,
+                "full_path": full_p,
+                "panel_name": panel_name,
+                "cell_id": cell_id,
+                "status": "rejected",
+                "rel_folder": "all good cells/not good/"
+            })
+
+    total_accepted = sum(pos_accepted_counts.values())
+    total_rejected = sum(pos_rejected_counts.values())
+
+    # Determine active position (first position where accepted < 22)
+    active_position = ALL_POSITIONS[0]
+    for pos in ALL_POSITIONS:
+        if pos_accepted_counts[pos] < 22:
+            active_position = pos
+            break
+
+    return JSONResponse({
+        "folder_path": folder_path,
+        "total_cells": len(all_cells_list),
+        "total_accepted": total_accepted,
+        "total_rejected": total_rejected,
+        "target_total": 3168,
+        "target_per_position": 22,
+        "active_position": active_position,
+        "pos_accepted_counts": pos_accepted_counts,
+        "pos_rejected_counts": pos_rejected_counts,
+        "cells": all_cells_list,
+        "all_positions": ALL_POSITIONS
+    })
+
+@app.post("/api/good-sorter/action")
+async def good_cells_sorter_action(
+    folder_path: str = Form(...),
+    file_path: str = Form(...),
+    action: str = Form(...) # 'accepted' or 'rejected'
+):
+    """
+    Moves cell image to '3168' if accepted or 'not good' if rejected.
+    Returns updated position counts and progress.
+    """
+    folder_path = folder_path.strip('"\'')
+    file_path = file_path.strip('"\'')
+    action = action.strip().lower()
+
+    if action not in ['accepted', 'rejected']:
+        raise HTTPException(status_code=400, detail="Action must be 'accepted' or 'rejected'")
+
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
+
+    filename = os.path.basename(file_path)
+    target_sub = "3168" if action == "accepted" else "not good"
+    target_dir = os.path.join(folder_path, target_sub)
+    os.makedirs(target_dir, exist_ok=True)
+
+    new_full_path = os.path.join(target_dir, filename)
+    if file_path != new_full_path:
+        shutil.move(file_path, new_full_path)
+
+    # Recount
+    dir_3168 = os.path.join(folder_path, "3168")
+    dir_not_good = os.path.join(folder_path, "not good")
+
+    pos_accepted_counts = {p: 0 for p in ALL_POSITIONS}
+    pos_rejected_counts = {p: 0 for p in ALL_POSITIONS}
+
+    if os.path.exists(dir_3168):
+        for f in os.listdir(dir_3168):
+            if f.lower().endswith(('.png', '.jpg', '.jpeg')):
+                parts = f.replace('.png', '').replace('.jpg', '').replace('.jpeg', '').split('-')
+                cell_id = parts[-1] if len(parts) > 1 else ""
+                if cell_id in pos_accepted_counts:
+                    pos_accepted_counts[cell_id] += 1
+
+    if os.path.exists(dir_not_good):
+        for f in os.listdir(dir_not_good):
+            if f.lower().endswith(('.png', '.jpg', '.jpeg')):
+                parts = f.replace('.png', '').replace('.jpg', '').replace('.jpeg', '').split('-')
+                cell_id = parts[-1] if len(parts) > 1 else ""
+                if cell_id in pos_rejected_counts:
+                    pos_rejected_counts[cell_id] += 1
+
+    total_accepted = sum(pos_accepted_counts.values())
+    total_rejected = sum(pos_rejected_counts.values())
+
+    active_position = ALL_POSITIONS[0]
+    for pos in ALL_POSITIONS:
+        if pos_accepted_counts[pos] < 22:
+            active_position = pos
+            break
+
+    return JSONResponse({
+        "status": "success",
+        "old_path": file_path,
+        "new_path": new_full_path,
+        "action": action,
+        "target_subfolder": target_sub,
+        "total_accepted": total_accepted,
+        "total_rejected": total_rejected,
+        "active_position": active_position,
+        "pos_accepted_counts": pos_accepted_counts,
+        "pos_rejected_counts": pos_rejected_counts
+    })
+
+# ----------------- BAD CELLS SORTER API -----------------
+
+@app.post("/api/sorter/init")
+async def init_bad_cells_sorter(folder_path: str = Form(...)):
+    folder_path = folder_path.strip('"\'')
+    if not os.path.exists(folder_path):
+        raise HTTPException(status_code=404, detail=f"المجلد غير موجود: {folder_path}")
+
     category_counts = {}
     for cat in CATEGORIES:
         cat_dir = os.path.join(folder_path, cat)
@@ -52,7 +244,6 @@ async def init_bad_cells_sorter(folder_path: str = Form(...)):
 
     cell_files_list = []
     
-    # 1. Scan unclassified files in root of 'all bad cells'
     for f in sorted(os.listdir(folder_path)):
         full_p = os.path.join(folder_path, f)
         if os.path.isfile(full_p) and f.lower().endswith(('.png', '.jpg', '.jpeg')):
@@ -70,7 +261,6 @@ async def init_bad_cells_sorter(folder_path: str = Form(...)):
                 "rel_folder": "all bad cells/"
             })
 
-    # 2. Scan files inside category subfolders
     for cat in CATEGORIES:
         cat_dir = os.path.join(folder_path, cat)
         if os.path.exists(cat_dir):
@@ -111,10 +301,6 @@ async def move_cell_to_category(
     file_path: str = Form(...),
     target_category: str = Form(...)
 ):
-    """
-    Moves a cell PNG image to the target defect subfolder (Cracks, Ribbons, etc.).
-    Returns updated category counts and updated file path.
-    """
     folder_path = folder_path.strip('"\'')
     file_path = file_path.strip('"\'')
     target_category = target_category.strip()
@@ -133,7 +319,6 @@ async def move_cell_to_category(
     if file_path != new_full_path:
         shutil.move(file_path, new_full_path)
 
-    # Recount categories
     category_counts = {}
     total_sorted = 0
     for cat in CATEGORIES:
@@ -154,7 +339,7 @@ async def move_cell_to_category(
         "total_sorted": total_sorted
     })
 
-# ----------------- ORIGINAL & BATCH API -----------------
+# ----------------- BASE API -----------------
 
 @app.post("/api/upload")
 async def upload_panel_image(file: UploadFile = File(...)):

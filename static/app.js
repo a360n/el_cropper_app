@@ -21,13 +21,25 @@ document.addEventListener('DOMContentLoaded', () => {
         "Impurity": 0, "Missing": 0, "other": 0
     };
 
+    // State Variables - Balanced Good Cells Sorter (Tab 4: 3168 & not good)
+    let goodFolderPath = "";
+    let goodCellsList = [];
+    let goodCellIndex = 0;
+    let goodActivePosition = "A1";
+    let goodPosAcceptedCounts = {};
+    let goodPosRejectedCounts = {};
+    let allPositions = [];
+
     // DOM Elements - Mode Switching
     const tabSingleMode = document.getElementById('tab-single-mode');
     const tabBatchMode = document.getElementById('tab-batch-mode');
     const tabSorterMode = document.getElementById('tab-sorter-mode');
+    const tabGoodSorterMode = document.getElementById('tab-good-sorter-mode');
+
     const singleModeContainer = document.getElementById('single-mode-container');
     const batchModeContainer = document.getElementById('batch-mode-container');
     const sorterModeContainer = document.getElementById('sorter-mode-container');
+    const goodSorterModeContainer = document.getElementById('good-sorter-mode-container');
 
     // DOM Elements - Single Mode
     const fileInput = document.getElementById('file-input');
@@ -109,40 +121,58 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnSorterPrev = document.getElementById('btn-sorter-prev');
     const btnSorterNext = document.getElementById('btn-sorter-next');
 
+    // DOM Elements - Balanced Good Cells Sorter (Tab 4)
+    const goodSorterPathInput = document.getElementById('good-sorter-path');
+    const btnLoadGoodSorter = document.getElementById('btn-load-good-sorter');
+    const goodSorterDashboard = document.getElementById('good-sorter-dashboard');
+    const goodActivePosBadge = document.getElementById('good-active-pos-badge');
+    const goodPosAcceptedCount = document.getElementById('good-pos-accepted-count');
+    const goodTotalAcceptedCount = document.getElementById('good-total-accepted-count');
+    const goodTotalRejectedCount = document.getElementById('good-total-rejected-count');
+
+    const goodCellFilenameTxt = document.getElementById('good-cell-filename-txt');
+    const goodCellFolderTag = document.getElementById('good-cell-folder-tag');
+    const goodCellImg = document.getElementById('good-cell-img');
+    const goodImgBadge = document.getElementById('good-img-badge');
+    const goodImgLoader = document.getElementById('good-img-loader');
+    const btnGoodPrev = document.getElementById('btn-good-prev');
+    const btnGoodNext = document.getElementById('btn-good-next');
+
+    const btnGoodAccept = document.getElementById('btn-good-accept');
+    const btnGoodReject = document.getElementById('btn-good-reject');
+    const positionMapGrid = document.getElementById('position-map-grid');
+
     // Celebration Modal Elements
     const celebrationModal = document.getElementById('celebration-modal');
     const btnCloseCelebration = document.getElementById('btn-close-celebration');
     const finalStatsGrid = document.getElementById('final-stats-grid');
 
     // Tab Navigation
-    tabSingleMode.addEventListener('click', () => {
-        tabSingleMode.classList.add('active');
-        tabBatchMode.classList.remove('active');
-        tabSorterMode.classList.remove('active');
-        singleModeContainer.style.display = 'block';
-        batchModeContainer.style.display = 'none';
-        sorterModeContainer.style.display = 'none';
-    });
+    tabSingleMode.addEventListener('click', () => switchTab('single'));
+    tabBatchMode.addEventListener('click', () => switchTab('batch'));
+    tabGoodSorterMode.addEventListener('click', () => switchTab('good-sorter'));
+    tabSorterMode.addEventListener('click', () => switchTab('sorter'));
 
-    tabBatchMode.addEventListener('click', () => {
-        tabBatchMode.classList.add('active');
-        tabSingleMode.classList.remove('active');
-        tabSorterMode.classList.remove('active');
-        singleModeContainer.style.display = 'none';
-        batchModeContainer.style.display = 'block';
-        sorterModeContainer.style.display = 'none';
-    });
+    function switchTab(mode) {
+        [tabSingleMode, tabBatchMode, tabGoodSorterMode, tabSorterMode].forEach(btn => btn.classList.remove('active'));
+        [singleModeContainer, batchModeContainer, goodSorterModeContainer, sorterModeContainer].forEach(c => c.style.display = 'none');
 
-    tabSorterMode.addEventListener('click', () => {
-        tabSorterMode.classList.add('active');
-        tabSingleMode.classList.remove('active');
-        tabBatchMode.classList.remove('active');
-        singleModeContainer.style.display = 'none';
-        batchModeContainer.style.display = 'none';
-        sorterModeContainer.style.display = 'block';
-    });
+        if (mode === 'single') {
+            tabSingleMode.classList.add('active');
+            singleModeContainer.style.display = 'block';
+        } else if (mode === 'batch') {
+            tabBatchMode.classList.add('active');
+            batchModeContainer.style.display = 'block';
+        } else if (mode === 'good-sorter') {
+            tabGoodSorterMode.classList.add('active');
+            goodSorterModeContainer.style.display = 'block';
+        } else if (mode === 'sorter') {
+            tabSorterMode.classList.add('active');
+            sorterModeContainer.style.display = 'block';
+        }
+    }
 
-    // Single File Drag & Drop Handlers
+    // File Drag & Drop Handlers
     ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
         dropzoneCard.addEventListener(eventName, preventDefaults, false);
     });
@@ -276,7 +306,6 @@ document.addEventListener('DOMContentLoaded', () => {
         selectCellByIndex(parseInt(e.target.value, 10));
     });
 
-    // Canvas Overlay Renderer
     function drawOverlayCanvas() {
         if (!metadata || !fullPanelImg.complete) return;
 
@@ -464,10 +493,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 batchLogTbody.appendChild(tr);
             });
 
-            // Automatically pre-fill the Bad Cells Sorter path input with the 'all bad cells' folder path
-            if (results.all_bad_cells_dir) {
-                sorterFolderPathInput.value = results.all_bad_cells_dir;
-            }
+            if (results.all_bad_cells_dir) sorterFolderPathInput.value = results.all_bad_cells_dir;
+            if (results.all_good_cells_dir) goodSorterPathInput.value = results.all_good_cells_dir;
 
             alert(`🏁 اكتملت المعالجة وتجميع البيانات بنجاح!\n\n✅ الألواح الناجحة: ${results.success_count.toLocaleString()}\n📁 إجمالي all good cells: ${results.total_good_cells_aggregated.toLocaleString()}\n📁 إجمالي all bad cells: ${results.total_bad_cells_aggregated.toLocaleString()}`);
 
@@ -602,6 +629,181 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.target === badPanelsModal) badPanelsModal.style.display = 'none';
     });
 
+    // ---------------- BALANCED GOOD CELLS SORTER (TAB 4: 3168 & NOT GOOD) ----------------
+
+    btnLoadGoodSorter.addEventListener('click', async () => {
+        const folderPath = goodSorterPathInput.value.trim();
+        if (!folderPath) {
+            alert('يرجى أدخال أو لصق مسار مجلد all good cells أولاً.');
+            return;
+        }
+
+        showLoading('جاري فتح وإنشاء مجلدي 3168 و not good وحساب مصفوفة الخلايا الـ 144...');
+
+        try {
+            const formData = new FormData();
+            formData.append('folder_path', folderPath);
+
+            const res = await fetch('/api/good-sorter/init', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!res.ok) {
+                const errData = await res.json();
+                throw new Error(errData.detail || 'حدث خطأ في تحميل مجلد الخلايا السليمة.');
+            }
+
+            const data = await res.json();
+            goodFolderPath = data.folder_path;
+            goodCellsList = data.cells;
+            goodPosAcceptedCounts = data.pos_accepted_counts;
+            goodPosRejectedCounts = data.pos_rejected_counts;
+            goodActivePosition = data.active_position;
+            allPositions = data.all_positions;
+
+            if (goodCellsList.length === 0) {
+                alert('ℹ️ المجلد فارغ! لا توجد صور خلايا سليمة في هذا المجلد.');
+                return;
+            }
+
+            buildPositionMapGrid();
+            goodSorterDashboard.style.display = 'flex';
+            goodCellIndex = 0;
+            renderGoodSorterCell(0);
+
+            alert(`✅ تم تجهيز الفرز المتوازن بنجاح!\n\n📁 المجلدان 3168 و not good جاهزان.\n🎯 الموقع النشط الحالي: ${goodActivePosition}`);
+
+        } catch (err) {
+            alert(`❌ خطأ في تشغيل الفرز المتوازن: ${err.message}`);
+        } finally {
+            hideLoading();
+        }
+    });
+
+    function buildPositionMapGrid() {
+        positionMapGrid.innerHTML = '';
+        allPositions.forEach((pos, idx) => {
+            const btn = document.createElement('div');
+            btn.className = 'pos-map-btn';
+            btn.dataset.pos = pos;
+            btn.innerHTML = `
+                <span class="id-txt">${pos}</span>
+                <span class="cnt-txt" id="map-cnt-${pos}">0/22</span>
+            `;
+            btn.addEventListener('click', () => {
+                goodActivePosition = pos;
+                // Find first cell matching this position
+                const matchIdx = goodCellsList.findIndex(c => c.cell_id === pos);
+                if (matchIdx !== -1) {
+                    renderGoodSorterCell(matchIdx);
+                }
+            });
+            positionMapGrid.appendChild(btn);
+        });
+    }
+
+    function updatePositionMapGrid() {
+        allPositions.forEach(pos => {
+            const cnt = goodPosAcceptedCounts[pos] || 0;
+            const cntEl = document.getElementById(`map-cnt-${pos}`);
+            if (cntEl) cntEl.innerText = `${cnt}/22`;
+
+            const btnEl = document.querySelector(`.pos-map-btn[data-pos="${pos}"]`);
+            if (btnEl) {
+                btnEl.classList.toggle('active-pos', pos === goodActivePosition);
+                btnEl.classList.toggle('completed-pos', cnt >= 22);
+            }
+        });
+    }
+
+    function renderGoodSorterCell(index) {
+        if (index < 0 || index >= goodCellsList.length) return;
+        goodCellIndex = index;
+        const cell = goodCellsList[index];
+
+        // 1. Update Active Position
+        const activePosIdx = allPositions.indexOf(goodActivePosition) + 1;
+        goodActivePosBadge.innerText = `الموقع الحالي: ${goodActivePosition} (${activePosIdx} من 144)`;
+
+        // 2. Update Header Progress Counters
+        const currentPosAccepted = goodPosAcceptedCounts[goodActivePosition] || 0;
+        const totalAccepted = Object.values(goodPosAcceptedCounts).reduce((a, b) => a + b, 0);
+        const totalRejected = Object.values(goodPosRejectedCounts).reduce((a, b) => a + b, 0);
+
+        goodPosAcceptedCount.innerText = `${currentPosAccepted} / 22`;
+        goodTotalAcceptedCount.innerText = `${totalAccepted} / 3168`;
+        goodTotalRejectedCount.innerText = `${totalRejected}`;
+
+        // 3. Update Image Frame & Details
+        goodCellFilenameTxt.innerText = cell.filename;
+        goodCellFolderTag.innerText = cell.rel_folder;
+
+        goodImgLoader.style.display = 'block';
+        goodCellImg.src = `/api/cell-file-preview?path=${encodeURIComponent(cell.full_path)}`;
+        goodCellImg.onload = () => goodImgLoader.style.display = 'none';
+        goodCellImg.onerror = () => goodImgLoader.style.display = 'none';
+
+        goodImgBadge.innerText = cell.cell_id;
+
+        // Update Position Map Grid
+        updatePositionMapGrid();
+
+        // Check if 3,168 completed
+        if (totalAccepted >= 3168) {
+            triggerCelebrationSurprise();
+        }
+    }
+
+    async function handleGoodCellAction(action) {
+        if (goodCellsList.length === 0 || goodCellIndex >= goodCellsList.length) return;
+        const currentCell = goodCellsList[goodCellIndex];
+
+        try {
+            const formData = new FormData();
+            formData.append('folder_path', goodFolderPath);
+            formData.append('file_path', currentCell.full_path);
+            formData.append('action', action);
+
+            const res = await fetch('/api/good-sorter/action', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!res.ok) throw new Error('فشل تنفيذ العملية.');
+
+            const data = await res.json();
+            currentCell.full_path = data.new_path;
+            currentCell.status = action;
+            currentCell.rel_folder = `all good cells/${data.target_subfolder}/`;
+
+            goodPosAcceptedCounts = data.pos_accepted_counts;
+            goodPosRejectedCounts = data.pos_rejected_counts;
+            goodActivePosition = data.active_position;
+
+            // Move to next cell automatically
+            if (goodCellIndex < goodCellsList.length - 1) {
+                renderGoodSorterCell(goodCellIndex + 1);
+            } else {
+                renderGoodSorterCell(goodCellIndex);
+            }
+
+        } catch (err) {
+            alert(`❌ خطأ أثناء الفرز: ${err.message}`);
+        }
+    }
+
+    btnGoodAccept.addEventListener('click', () => handleGoodCellAction('accepted'));
+    btnGoodReject.addEventListener('click', () => handleGoodCellAction('rejected'));
+
+    btnGoodPrev.addEventListener('click', () => {
+        if (goodCellIndex > 0) renderGoodSorterCell(goodCellIndex - 1);
+    });
+
+    btnGoodNext.addEventListener('click', () => {
+        if (goodCellIndex < goodCellsList.length - 1) renderGoodSorterCell(goodCellIndex + 1);
+    });
+
     // ---------------- BAD CELLS CLASSIFIER & SORTER (TAB 3) ----------------
 
     btnLoadSorter.addEventListener('click', async () => {
@@ -655,12 +857,10 @@ document.addEventListener('DOMContentLoaded', () => {
         sorterIndex = index;
         const cell = sorterCellsList[index];
 
-        // 1. Update Corner Card 1 (Top Right Info)
         sorterInfoPanel.innerText = cell.panel_name;
         sorterInfoCell.innerText = cell.cell_id;
         sorterInfoFolder.innerText = cell.rel_folder;
 
-        // 2. Update Corner Card 2 (Top Left Stats)
         const sortedCount = Object.values(sorterCategoryCounts).reduce((a, b) => a + b, 0);
         const totalCount = sorterCellsList.length;
         const remainingCount = Math.max(0, totalCount - sortedCount);
@@ -669,7 +869,6 @@ document.addEventListener('DOMContentLoaded', () => {
         sorterStatTotal.innerText = totalCount.toLocaleString();
         sorterStatRemaining.innerText = remainingCount.toLocaleString();
 
-        // 3. Update Image Frame
         sorterImgLoader.style.display = 'block';
         sorterCellImg.src = `/api/cell-file-preview?path=${encodeURIComponent(cell.full_path)}`;
         sorterCellImg.onload = () => sorterImgLoader.style.display = 'none';
@@ -677,27 +876,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
         sorterImgBadge.innerText = `الخلية ${index + 1} من ${totalCount}`;
 
-        // 4. Update Category Counters
         Object.keys(sorterCategoryCounts).forEach(cat => {
             const cntEl = document.getElementById(`cnt-${cat}`);
-            if (cntEl) {
-                cntEl.innerText = `${sorterCategoryCounts[cat]} صورة`;
-            }
+            if (cntEl) cntEl.innerText = `${sorterCategoryCounts[cat]} صورة`;
         });
 
-        // 5. Highlight active button if already categorized
         document.querySelectorAll('.btn-category').forEach(btn => {
             const cat = btn.dataset.cat;
             btn.classList.toggle('active-cat', cell.category === cat);
         });
 
-        // Check if all cells have been sorted
         if (remainingCount === 0 && totalCount > 0) {
             triggerCelebrationSurprise();
         }
     }
 
-    // Category Button Click & Move Handler
     document.querySelectorAll('.btn-category').forEach(btn => {
         btn.addEventListener('click', async () => {
             if (sorterCellsList.length === 0 || sorterIndex >= sorterCellsList.length) return;
@@ -719,14 +912,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!res.ok) throw new Error('فشل نقل الصورة.');
 
                 const data = await res.json();
-                
-                // Update local state
                 currentCell.full_path = data.new_path;
                 currentCell.category = category;
                 currentCell.rel_folder = `all bad cells/${category}/`;
                 sorterCategoryCounts = data.category_counts;
 
-                // Move to next cell automatically
                 if (sorterIndex < sorterCellsList.length - 1) {
                     renderSorterCell(sorterIndex + 1);
                 } else {
@@ -747,33 +937,41 @@ document.addEventListener('DOMContentLoaded', () => {
         if (sorterIndex < sorterCellsList.length - 1) renderSorterCell(sorterIndex + 1);
     });
 
-    // Keyboard Shortcuts (Keys 1-6 and Arrow Keys)
+    // Global Keyboard Shortcuts
     document.addEventListener('keydown', (e) => {
-        if (sorterDashboard.style.display === 'none' || sorterCellsList.length === 0) return;
+        // Mode 4 Keyboard Shortcuts (Good Cells Sorter)
+        if (goodSorterModeContainer.style.display !== 'none' && goodSorterDashboard.style.display !== 'none') {
+            if (e.key === '1' || e.key === 'Enter') {
+                btnGoodAccept.click();
+            } else if (e.key === '2' || e.key === 'Backspace') {
+                btnGoodReject.click();
+            } else if (e.key === 'ArrowRight') {
+                if (goodCellIndex > 0) renderGoodSorterCell(goodCellIndex - 1);
+            } else if (e.key === 'ArrowLeft') {
+                if (goodCellIndex < goodCellsList.length - 1) renderGoodSorterCell(goodCellIndex + 1);
+            }
+            return;
+        }
 
-        const categoryKeys = {
-            '1': 'Cracks',
-            '2': 'Ribbons',
-            '3': 'Misalignment',
-            '4': 'Impurity',
-            '5': 'Missing',
-            '6': 'other'
-        };
+        // Mode 3 Keyboard Shortcuts (Bad Cells Sorter)
+        if (sorterModeContainer.style.display !== 'none' && sorterDashboard.style.display !== 'none') {
+            const categoryKeys = {
+                '1': 'Cracks', '2': 'Ribbons', '3': 'Misalignment',
+                '4': 'Impurity', '5': 'Missing', '6': 'other'
+            };
 
-        if (categoryKeys[e.key]) {
-            const cat = categoryKeys[e.key];
-            const btn = document.querySelector(`.btn-category[data-cat="${cat}"]`);
-            if (btn) btn.click();
-        } else if (e.key === 'ArrowRight') {
-            // Next cell (RTL)
-            if (sorterIndex < sorterCellsList.length - 1) renderSorterCell(sorterIndex + 1);
-        } else if (e.key === 'ArrowLeft') {
-            // Prev cell (RTL)
-            if (sorterIndex > 0) renderSorterCell(sorterIndex - 1);
+            if (categoryKeys[e.key]) {
+                const cat = categoryKeys[e.key];
+                const btn = document.querySelector(`.btn-category[data-cat="${cat}"]`);
+                if (btn) btn.click();
+            } else if (e.key === 'ArrowRight') {
+                if (sorterIndex < sorterCellsList.length - 1) renderSorterCell(sorterIndex + 1);
+            } else if (e.key === 'ArrowLeft') {
+                if (sorterIndex > 0) renderSorterCell(sorterIndex - 1);
+            }
         }
     });
 
-    // CREATIVE MOTIVATIONAL CELEBRATION SURPRISE MODAL
     function triggerCelebrationSurprise() {
         finalStatsGrid.innerHTML = '';
         const catIcons = {
