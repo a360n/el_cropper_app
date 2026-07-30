@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>أداة تقطيع أسطح الألواح الشمسية (EL Cell Cropper)</title>
+    <title>أداة تقطيع وأفرز أسطح الألواح الشمسية (EL Cell Cropper & Sorter)</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -20,8 +20,8 @@
                     <i class="fa-solid fa-border-all"></i>
                 </div>
                 <div class="brand-text">
-                    <h1>مُقَطِّع ألواح الطاقة الشمسية (EL Cell Cropper)</h1>
-                    <p class="subtitle">تقطيع الألواح وإنشاء مجلدات all cell و bad cells وتجميع مجموعات all good/bad cells</p>
+                    <h1>مُقَطِّع ومُصَنِّف ألواح الطاقة الشمسية (EL Cell Cropper & Sorter)</h1>
+                    <p class="subtitle">تقطيع الألواح، إنشاء المجموعات، وفرز الألواح والعيوب بدقة عالية</p>
                 </div>
             </div>
             
@@ -32,6 +32,9 @@
                 </button>
                 <button class="tab-btn" id="tab-batch-mode">
                     <i class="fa-solid fa-folder-tree"></i> معالجة مجلد الألواح (Batch & Datasets)
+                </button>
+                <button class="tab-btn" id="tab-sorter-mode">
+                    <i class="fa-solid fa-layer-group"></i> فرز الألواح السيئة
                 </button>
             </div>
 
@@ -70,15 +73,12 @@
 
                 <!-- Interactive Workspace Split -->
                 <div class="workspace-split" id="workspace-split" style="display: none;">
-                    
-                    <!-- LEFT PANE: Cell Inspector & Controls -->
                     <aside class="pane left-pane">
                         <div class="pane-header">
                             <h2><i class="fa-solid fa-microscope"></i> معاينة وتفتيش الخلايا المقطعة</h2>
                             <span class="cell-count-badge" id="cell-count-badge">144 / 144 خلية</span>
                         </div>
 
-                        <!-- Selected Cell Preview Card -->
                         <div class="cell-inspector-card">
                             <div class="cell-display-header">
                                 <div class="cell-id-badge" id="current-cell-id">A1</div>
@@ -93,7 +93,6 @@
                                 </div>
                             </div>
 
-                            <!-- Navigation Bar -->
                             <div class="cell-navigation-bar">
                                 <button class="nav-btn" id="btn-prev-cell" title="الخلية السابقة">
                                     <i class="fa-solid fa-chevron-right"></i> السابقة
@@ -105,7 +104,6 @@
                             </div>
                         </div>
 
-                        <!-- Mini Matrix Grid Selector -->
                         <div class="matrix-grid-section">
                             <div class="matrix-header">
                                 <h3><i class="fa-solid fa-table-cells"></i> مصفوفة التبديل السريع (A1 - F24)</h3>
@@ -114,45 +112,22 @@
                             <div class="matrix-grid" id="matrix-grid"></div>
                         </div>
 
-                        <!-- Metadata Accordion -->
                         <div class="stats-accordion">
                             <div class="accordion-title">
                                 <span><i class="fa-solid fa-sliders"></i> تفاصيل الحسابات الهندسية للوح</span>
                                 <i class="fa-solid fa-chevron-down"></i>
                             </div>
                             <div class="accordion-content">
-                                <div class="stat-row">
-                                    <span class="stat-label">معالجة process_tif:</span>
-                                    <span class="stat-val" id="stat-process-tif">نعم (مفعّل)</span>
-                                </div>
-                                <div class="stat-row">
-                                    <span class="stat-label">الأبعاد الأصلية:</span>
-                                    <span class="stat-val" id="stat-orig-dim">-</span>
-                                </div>
-                                <div class="stat-row">
-                                    <span class="stat-label">أبعاد النموذج (2:1):</span>
-                                    <span class="stat-val" id="stat-model-dim">-</span>
-                                </div>
-                                <div class="stat-row">
-                                    <span class="stat-label">أبعاد الأمان:</span>
-                                    <span class="stat-val" id="stat-padded-dim">-</span>
-                                </div>
-                                <div class="stat-row">
-                                    <span class="stat-label">عرض الخلية الأفقية (CH):</span>
-                                    <span class="stat-val" id="stat-ch">-</span>
-                                </div>
-                                <div class="stat-row">
-                                    <span class="stat-label">ارتفاع الخلية العمودية (CW):</span>
-                                    <span class="stat-val" id="stat-cw">-</span>
-                                </div>
-                                <div class="stat-row">
-                                    <span class="stat-label">طول ضلع المربع (SL):</span>
-                                    <span class="stat-val" id="stat-sl">-</span>
-                                </div>
+                                <div class="stat-row"><span class="stat-label">معالجة process_tif:</span> <span class="stat-val" id="stat-process-tif">نعم (مفعّل)</span></div>
+                                <div class="stat-row"><span class="stat-label">الأبعاد الأصلية:</span> <span class="stat-val" id="stat-orig-dim">-</span></div>
+                                <div class="stat-row"><span class="stat-label">أبعاد النموذج (2:1):</span> <span class="stat-val" id="stat-model-dim">-</span></div>
+                                <div class="stat-row"><span class="stat-label">أبعاد الأمان:</span> <span class="stat-val" id="stat-padded-dim">-</span></div>
+                                <div class="stat-row"><span class="stat-label">عرض الخلية (CH):</span> <span class="stat-val" id="stat-ch">-</span></div>
+                                <div class="stat-row"><span class="stat-label">ارتفاع الخلية (CW):</span> <span class="stat-val" id="stat-cw">-</span></div>
+                                <div class="stat-row"><span class="stat-label">ضلع المربع (SL):</span> <span class="stat-val" id="stat-sl">-</span></div>
                             </div>
                         </div>
 
-                        <!-- Export Actions -->
                         <div class="export-actions-section">
                             <h3><i class="fa-solid fa-download"></i> تصدير الخلايا</h3>
                             <div class="export-buttons-group">
@@ -169,7 +144,6 @@
                         </div>
                     </aside>
 
-                    <!-- RIGHT PANE: Full Panel Visualizer -->
                     <section class="pane right-pane">
                         <div class="pane-header">
                             <h2><i class="fa-solid fa-image"></i> المعاينة الكاملة للوح الشمسي</h2>
@@ -200,7 +174,6 @@
             <!-- MODE 2: BATCH FOLDER PROCESSOR & DATASET BUILDER -->
             <div class="mode-container" id="batch-mode-container" style="display: none;">
                 <div class="batch-workspace">
-                    
                     <div class="batch-header-card">
                         <div class="batch-card-title">
                             <i class="fa-solid fa-folder-tree icon-large"></i>
@@ -227,7 +200,6 @@
                         </div>
                     </div>
 
-                    <!-- Scan & Dataset Summary Cards -->
                     <div class="batch-summary-cards" id="batch-summary-cards" style="display: none;">
                         <div class="summary-card text-blue">
                             <div class="num" id="summary-total-panels">0</div>
@@ -247,7 +219,6 @@
                         </div>
                     </div>
 
-                    <!-- Progress Log Table -->
                     <div class="batch-log-section" id="batch-log-section" style="display: none;">
                         <h3><i class="fa-solid fa-list-check"></i> سجل معالجة الألواح والمجلدات الناتجة</h3>
                         <div class="table-wrapper">
@@ -265,6 +236,141 @@
                                 <tbody id="batch-log-tbody"></tbody>
                             </table>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MODE 3: BAD CELLS CLASSIFIER & SORTER -->
+            <div class="mode-container" id="sorter-mode-container" style="display: none;">
+                <div class="sorter-workspace">
+                    
+                    <!-- Top Bar Input & Header -->
+                    <div class="sorter-top-bar">
+                        <div class="sorter-input-container">
+                            <label for="sorter-folder-path"><i class="fa-solid fa-folder-open"></i> مسار مجلد <strong>all bad cells</strong> لفرز عيوب الخلايا:</label>
+                            <div class="sorter-input-row">
+                                <input type="text" id="sorter-folder-path" placeholder="أدخل مسار مجلد all bad cells (مثال: /Users/.../Restructured/all bad cells)" class="text-input">
+                                <button class="btn btn-primary" id="btn-load-sorter">
+                                    <i class="fa-solid fa-rocket"></i> تحميل وتجهيز الفرز
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Main Sorter Dashboard Split -->
+                    <div class="sorter-dashboard" id="sorter-dashboard" style="display: none;">
+                        
+                        <!-- TOP RIGHT: Cell Info Card -->
+                        <div class="sorter-corner-card sorter-top-right">
+                            <div class="card-icon"><i class="fa-solid fa-circle-info text-blue"></i></div>
+                            <div class="card-content">
+                                <h4>معلومات الخلية الحالية</h4>
+                                <div class="info-item"><span class="lbl">رقم اللوح:</span> <strong id="sorter-info-panel">-</strong></div>
+                                <div class="info-item"><span class="lbl">موقع المشكلة:</span> <strong id="sorter-info-cell" class="cell-tag-highlight">-</strong></div>
+                                <div class="info-item"><span class="lbl">المجلد الحالي:</span> <span id="sorter-info-folder" class="folder-tag">-</span></div>
+                            </div>
+                        </div>
+
+                        <!-- TOP LEFT: Statistics & Progress Card -->
+                        <div class="sorter-corner-card sorter-top-left">
+                            <div class="card-icon"><i class="fa-solid fa-chart-pie text-green"></i></div>
+                            <div class="card-content">
+                                <h4>إحصائيات وتقدم الفرز</h4>
+                                <div class="info-item"><span class="lbl">الخلايا المفروزة:</span> <strong id="sorter-stat-sorted" class="text-green">0</strong></div>
+                                <div class="info-item"><span class="lbl">إجمالي خلايا المجلد:</span> <strong id="sorter-stat-total">0</strong></div>
+                                <div class="info-item"><span class="lbl">الخلايا المتبقية للفرز:</span> <strong id="sorter-stat-remaining" class="text-gold">0</strong></div>
+                            </div>
+                        </div>
+
+                        <!-- CENTER SCREEN: Main Image Viewer & Nav Buttons -->
+                        <div class="sorter-center-viewport">
+                            <button class="sorter-nav-arrow sorter-prev-arrow" id="btn-sorter-prev" title="الخلية السابقة (يمكنك الرجوع والتعديل حرّاً)">
+                                <i class="fa-solid fa-chevron-right"></i>
+                                <span>الخلية السابقة</span>
+                            </button>
+
+                            <div class="sorter-image-frame">
+                                <img id="sorter-cell-img" src="" alt="Defect Cell Preview" class="sorter-img">
+                                <div class="sorter-img-badge" id="sorter-img-badge">الخلية 1 من 0</div>
+                                <div class="sorter-loader" id="sorter-img-loader" style="display: none;">
+                                    <i class="fa-solid fa-spinner fa-spin fa-2x"></i>
+                                </div>
+                            </div>
+
+                            <button class="sorter-nav-arrow sorter-next-arrow" id="btn-sorter-next" title="الخلية التالية (تخطي دون نقل)">
+                                <span>الخلية التالية</span>
+                                <i class="fa-solid fa-chevron-left"></i>
+                            </button>
+                        </div>
+
+                        <!-- BELOW IMAGE: 6 Category Classification Buttons & Counters -->
+                        <div class="sorter-categories-row">
+                            <div class="category-btn-wrapper">
+                                <button class="btn-category cat-cracks" data-cat="Cracks">
+                                    <i class="fa-solid fa-bolt-lightning"></i>
+                                    <span>Cracks</span>
+                                    <kbd>1</kbd>
+                                </button>
+                                <div class="category-counter" id="cnt-Cracks">0 صورة</div>
+                            </div>
+
+                            <div class="category-btn-wrapper">
+                                <button class="btn-category cat-ribbons" data-cat="Ribbons">
+                                    <i class="fa-solid fa-grip-lines-vertical"></i>
+                                    <span>Ribbons</span>
+                                    <kbd>2</kbd>
+                                </button>
+                                <div class="category-counter" id="cnt-Ribbons">0 صورة</div>
+                            </div>
+
+                            <div class="category-btn-wrapper">
+                                <button class="btn-category cat-misalignment" data-cat="Misalignment">
+                                    <i class="fa-solid fa-arrows-rotate"></i>
+                                    <span>Misalignment</span>
+                                    <kbd>3</kbd>
+                                </button>
+                                <div class="category-counter" id="cnt-Misalignment">0 صورة</div>
+                            </div>
+
+                            <div class="category-btn-wrapper">
+                                <button class="btn-category cat-impurity" data-cat="Impurity">
+                                    <i class="fa-solid fa-bahai"></i>
+                                    <span>Impurity</span>
+                                    <kbd>4</kbd>
+                                </button>
+                                <div class="category-counter" id="cnt-Impurity">0 صورة</div>
+                            </div>
+
+                            <div class="category-btn-wrapper">
+                                <button class="btn-category cat-missing" data-cat="Missing">
+                                    <i class="fa-solid fa-square-minus"></i>
+                                    <span>Missing</span>
+                                    <kbd>5</kbd>
+                                </button>
+                                <div class="category-counter" id="cnt-Missing">0 صورة</div>
+                            </div>
+
+                            <div class="category-btn-wrapper">
+                                <button class="btn-category cat-other" data-cat="other">
+                                    <i class="fa-solid fa-cubes-stacked"></i>
+                                    <span>other</span>
+                                    <kbd>6</kbd>
+                                </button>
+                                <div class="category-counter" id="cnt-other">0 صورة</div>
+                            </div>
+                        </div>
+
+                        <!-- BOTTOM CORNERS: Inspirational Quotes -->
+                        <div class="sorter-bottom-quote sorter-bottom-right">
+                            <i class="fa-solid fa-quote-right text-gold"></i>
+                            <span>أنت تستطيع اكمل عملك و ضع ثقتك بالعملية و الخطة</span>
+                        </div>
+
+                        <div class="sorter-bottom-quote sorter-bottom-left">
+                            <i class="fa-solid fa-fire text-blue"></i>
+                            <span>Keep going</span>
+                        </div>
+
                     </div>
 
                 </div>
@@ -288,7 +394,6 @@
                 </div>
 
                 <div class="modal-body bad-panels-modal-body">
-                    <!-- Left Column: JSON Info & Bad Cell Images -->
                     <div class="modal-col info-bad-cells-col">
                         <div class="bad-panel-info-card">
                             <div class="info-card-header">
@@ -302,14 +407,12 @@
                             </div>
                         </div>
 
-                        <!-- Bad Cell Images Container -->
                         <div class="bad-cells-preview-section">
                             <h3><i class="fa-solid fa-circle-exclamation text-gold"></i> صور الخلايا المعيبة المقطعة (bad cells/)</h3>
                             <div class="bad-cells-grid" id="bad-cells-grid"></div>
                         </div>
                     </div>
 
-                    <!-- Right Column: Full Panel Preview -->
                     <div class="modal-col panel-image-col">
                         <div class="full-panel-modal-card">
                             <h3><i class="fa-solid fa-image"></i> صورة اللوح كاملة (.tif)</h3>
@@ -335,7 +438,37 @@
             </div>
         </div>
 
-        <!-- Loading Overlay -->
+        <!-- CREATIVE MOTIVATIONAL CELEBRATION SURPRISE MODAL -->
+        <div class="modal-overlay" id="celebration-modal" style="display: none;">
+            <div class="modal-card celebration-card">
+                <div class="celebration-content">
+                    <div class="trophy-icon-wrapper">
+                        <i class="fa-solid fa-trophy text-gold fa-beat"></i>
+                    </div>
+                    <h2 class="celebration-title">🎉 مبارك! تم إنجاز وفرز جميع الخلايا بنجاح 100%!</h2>
+                    <p class="celebration-subtitle">لقد أثبتّ شَغَفاً واستمراراً استثنائياً في بناء وتجهيز بيانات الذكاء الاصطناعي بحِرفية عالية!</p>
+
+                    <!-- Final Category Statistics Breakdown -->
+                    <div class="final-stats-box">
+                        <h3><i class="fa-solid fa-chart-bar"></i> الإحصائيات الختامية لتوزيع عيوب الخلايا:</h3>
+                        <div class="final-stats-grid" id="final-stats-grid"></div>
+                    </div>
+
+                    <!-- Personal Encouragement Quote Card -->
+                    <div class="dev-tribute-card">
+                        <div class="tribute-badge"><i class="fa-solid fa-star"></i> رسالة تحفيزية خاصة لاستمرارك ومستقبلك</div>
+                        <p class="tribute-quote">"النجاح العظيم في الذكاء الاصطناعي لا يأتي من الخطوات الكبيرة الفجائية، بل من الدقة الشديدة، والشغف اليومي، والثقة بالعملية والخطة. أنت الآن تبني نموذجاً سينير المستقبل!"</p>
+                        <div class="author-signature">🚀 استمر في البرمجة والتطوير .. القادم أعظم وأجمل دائماً!</div>
+                    </div>
+
+                    <button class="btn btn-primary btn-large" id="btn-close-celebration">
+                        <i class="fa-solid fa-circle-check"></i> شكراً لك، إغلاق ومتابعة العمل العظيم
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Global Loading Overlay -->
         <div class="global-loading-overlay" id="loading-overlay" style="display: none;">
             <div class="spinner-card">
                 <i class="fa-solid fa-gear fa-spin fa-3x"></i>

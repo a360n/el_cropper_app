@@ -12,11 +12,22 @@ document.addEventListener('DOMContentLoaded', () => {
     let badPanelsList = [];
     let currentBadPanelIndex = 0;
 
+    // State Variables - Bad Cells Classifier & Sorter (Tab 3)
+    let sorterFolderPath = "";
+    let sorterCellsList = [];
+    let sorterIndex = 0;
+    let sorterCategoryCounts = {
+        "Cracks": 0, "Ribbons": 0, "Misalignment": 0,
+        "Impurity": 0, "Missing": 0, "other": 0
+    };
+
     // DOM Elements - Mode Switching
     const tabSingleMode = document.getElementById('tab-single-mode');
     const tabBatchMode = document.getElementById('tab-batch-mode');
+    const tabSorterMode = document.getElementById('tab-sorter-mode');
     const singleModeContainer = document.getElementById('single-mode-container');
     const batchModeContainer = document.getElementById('batch-mode-container');
+    const sorterModeContainer = document.getElementById('sorter-mode-container');
 
     // DOM Elements - Single Mode
     const fileInput = document.getElementById('file-input');
@@ -82,22 +93,56 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnPrevBadPanel = document.getElementById('btn-prev-bad-panel');
     const btnNextBadPanel = document.getElementById('btn-next-bad-panel');
 
+    // DOM Elements - Sorter Mode (Tab 3)
+    const sorterFolderPathInput = document.getElementById('sorter-folder-path');
+    const btnLoadSorter = document.getElementById('btn-load-sorter');
+    const sorterDashboard = document.getElementById('sorter-dashboard');
+    const sorterInfoPanel = document.getElementById('sorter-info-panel');
+    const sorterInfoCell = document.getElementById('sorter-info-cell');
+    const sorterInfoFolder = document.getElementById('sorter-info-folder');
+    const sorterStatSorted = document.getElementById('sorter-stat-sorted');
+    const sorterStatTotal = document.getElementById('sorter-stat-total');
+    const sorterStatRemaining = document.getElementById('sorter-stat-remaining');
+    const sorterCellImg = document.getElementById('sorter-cell-img');
+    const sorterImgBadge = document.getElementById('sorter-img-badge');
+    const sorterImgLoader = document.getElementById('sorter-img-loader');
+    const btnSorterPrev = document.getElementById('btn-sorter-prev');
+    const btnSorterNext = document.getElementById('btn-sorter-next');
+
+    // Celebration Modal Elements
+    const celebrationModal = document.getElementById('celebration-modal');
+    const btnCloseCelebration = document.getElementById('btn-close-celebration');
+    const finalStatsGrid = document.getElementById('final-stats-grid');
+
     // Tab Navigation
     tabSingleMode.addEventListener('click', () => {
         tabSingleMode.classList.add('active');
         tabBatchMode.classList.remove('active');
+        tabSorterMode.classList.remove('active');
         singleModeContainer.style.display = 'block';
         batchModeContainer.style.display = 'none';
+        sorterModeContainer.style.display = 'none';
     });
 
     tabBatchMode.addEventListener('click', () => {
         tabBatchMode.classList.add('active');
         tabSingleMode.classList.remove('active');
+        tabSorterMode.classList.remove('active');
         singleModeContainer.style.display = 'none';
         batchModeContainer.style.display = 'block';
+        sorterModeContainer.style.display = 'none';
     });
 
-    // File Drag & Drop Handlers
+    tabSorterMode.addEventListener('click', () => {
+        tabSorterMode.classList.add('active');
+        tabSingleMode.classList.remove('active');
+        tabBatchMode.classList.remove('active');
+        singleModeContainer.style.display = 'none';
+        batchModeContainer.style.display = 'none';
+        sorterModeContainer.style.display = 'block';
+    });
+
+    // Single File Drag & Drop Handlers
     ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
         dropzoneCard.addEventListener(eventName, preventDefaults, false);
     });
@@ -125,7 +170,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.target.files.length > 0) handleFileUpload(e.target.files[0]);
     });
 
-    // Single File Upload & Pipeline Execution
     async function handleFileUpload(file) {
         showLoading('جاري معالجة وتمرير الصورة عبر process_tif وتقطيع 144 خلية...');
         const formData = new FormData();
@@ -304,7 +348,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.addEventListener('resize', () => drawOverlayCanvas());
 
-    // Export Options
     btnExportZip.addEventListener('click', () => {
         if (!currentSessionId) return;
         window.location.href = `/api/export/zip/${currentSessionId}`;
@@ -421,6 +464,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 batchLogTbody.appendChild(tr);
             });
 
+            // Automatically pre-fill the Bad Cells Sorter path input with the 'all bad cells' folder path
+            if (results.all_bad_cells_dir) {
+                sorterFolderPathInput.value = results.all_bad_cells_dir;
+            }
+
             alert(`🏁 اكتملت المعالجة وتجميع البيانات بنجاح!\n\n✅ الألواح الناجحة: ${results.success_count.toLocaleString()}\n📁 إجمالي all good cells: ${results.total_good_cells_aggregated.toLocaleString()}\n📁 إجمالي all bad cells: ${results.total_bad_cells_aggregated.toLocaleString()}`);
 
         } catch (err) {
@@ -503,14 +551,12 @@ document.addEventListener('DOMContentLoaded', () => {
             jsonDefectsList.innerText = 'لا توجد عيوب مدونة';
         }
 
-        // Render bad cells images grid
         badCellsGrid.innerHTML = '';
         if (panel.bad_cell_files && panel.bad_cell_files.length > 0) {
             panel.bad_cell_files.forEach(cellFile => {
                 const card = document.createElement('div');
                 card.className = 'bad-cell-card';
 
-                // Extract Cell ID from filename (e.g. 2026-01-07_12-59-28-B09.png -> B09)
                 const filenameParts = cellFile.filename.replace('.png', '').split('-');
                 const cellId = filenameParts[filenameParts.length - 1];
 
@@ -530,7 +576,6 @@ document.addEventListener('DOMContentLoaded', () => {
             badCellsGrid.innerHTML = '<p style="color:var(--text-muted); font-size:12px;">لم يتم العثور على صور خلايا معيبة متطابقة في هذا المجلد.</p>';
         }
 
-        // Render full panel image
         modalPanelLoader.style.display = 'block';
         modalFullPanelImg.src = `/api/panel-file-preview?path=${encodeURIComponent(panel.tif_path)}`;
         modalFullPanelImg.onload = () => modalPanelLoader.style.display = 'none';
@@ -555,6 +600,212 @@ document.addEventListener('DOMContentLoaded', () => {
 
     badPanelsModal.addEventListener('click', (e) => {
         if (e.target === badPanelsModal) badPanelsModal.style.display = 'none';
+    });
+
+    // ---------------- BAD CELLS CLASSIFIER & SORTER (TAB 3) ----------------
+
+    btnLoadSorter.addEventListener('click', async () => {
+        const folderPath = sorterFolderPathInput.value.trim();
+        if (!folderPath) {
+            alert('يرجى أدخال أو لصق مسار مجلد all bad cells أولاً.');
+            return;
+        }
+
+        showLoading('جاري فتح وإنشاء المجلدات الفرعية 6 (Cracks, Ribbons...) ومسح خلايا العيوب...');
+
+        try {
+            const formData = new FormData();
+            formData.append('folder_path', folderPath);
+
+            const res = await fetch('/api/sorter/init', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!res.ok) {
+                const errData = await res.json();
+                throw new Error(errData.detail || 'حدث خطأ في تحميل مجلد الخلايا السيئة.');
+            }
+
+            const data = await res.json();
+            sorterFolderPath = data.folder_path;
+            sorterCellsList = data.cells;
+            sorterCategoryCounts = data.category_counts;
+
+            if (sorterCellsList.length === 0) {
+                alert('ℹ️ المجلد فارغ! لا توجد صور خلايا معيبة للفرز في هذا المجلد.');
+                return;
+            }
+
+            sorterDashboard.style.display = 'flex';
+            sorterIndex = 0;
+            renderSorterCell(0);
+
+            alert(`✅ تم تجهيز الفرز بنجاح!\n\n📁 المجلدات الـ 6 جاهزة للاستقبال.\n📦 إجمالي الخلايا: ${data.total_cells}`);
+
+        } catch (err) {
+            alert(`❌ خطأ في تشغيل مصنف الفرز: ${err.message}`);
+        } finally {
+            hideLoading();
+        }
+    });
+
+    function renderSorterCell(index) {
+        if (index < 0 || index >= sorterCellsList.length) return;
+        sorterIndex = index;
+        const cell = sorterCellsList[index];
+
+        // 1. Update Corner Card 1 (Top Right Info)
+        sorterInfoPanel.innerText = cell.panel_name;
+        sorterInfoCell.innerText = cell.cell_id;
+        sorterInfoFolder.innerText = cell.rel_folder;
+
+        // 2. Update Corner Card 2 (Top Left Stats)
+        const sortedCount = Object.values(sorterCategoryCounts).reduce((a, b) => a + b, 0);
+        const totalCount = sorterCellsList.length;
+        const remainingCount = Math.max(0, totalCount - sortedCount);
+
+        sorterStatSorted.innerText = sortedCount.toLocaleString();
+        sorterStatTotal.innerText = totalCount.toLocaleString();
+        sorterStatRemaining.innerText = remainingCount.toLocaleString();
+
+        // 3. Update Image Frame
+        sorterImgLoader.style.display = 'block';
+        sorterCellImg.src = `/api/cell-file-preview?path=${encodeURIComponent(cell.full_path)}`;
+        sorterCellImg.onload = () => sorterImgLoader.style.display = 'none';
+        sorterCellImg.onerror = () => sorterImgLoader.style.display = 'none';
+
+        sorterImgBadge.innerText = `الخلية ${index + 1} من ${totalCount}`;
+
+        // 4. Update Category Counters
+        Object.keys(sorterCategoryCounts).forEach(cat => {
+            const cntEl = document.getElementById(`cnt-${cat}`);
+            if (cntEl) {
+                cntEl.innerText = `${sorterCategoryCounts[cat]} صورة`;
+            }
+        });
+
+        // 5. Highlight active button if already categorized
+        document.querySelectorAll('.btn-category').forEach(btn => {
+            const cat = btn.dataset.cat;
+            btn.classList.toggle('active-cat', cell.category === cat);
+        });
+
+        // Check if all cells have been sorted
+        if (remainingCount === 0 && totalCount > 0) {
+            triggerCelebrationSurprise();
+        }
+    }
+
+    // Category Button Click & Move Handler
+    document.querySelectorAll('.btn-category').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            if (sorterCellsList.length === 0 || sorterIndex >= sorterCellsList.length) return;
+
+            const category = btn.dataset.cat;
+            const currentCell = sorterCellsList[sorterIndex];
+
+            try {
+                const formData = new FormData();
+                formData.append('folder_path', sorterFolderPath);
+                formData.append('file_path', currentCell.full_path);
+                formData.append('target_category', category);
+
+                const res = await fetch('/api/sorter/move', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!res.ok) throw new Error('فشل نقل الصورة.');
+
+                const data = await res.json();
+                
+                // Update local state
+                currentCell.full_path = data.new_path;
+                currentCell.category = category;
+                currentCell.rel_folder = `all bad cells/${category}/`;
+                sorterCategoryCounts = data.category_counts;
+
+                // Move to next cell automatically
+                if (sorterIndex < sorterCellsList.length - 1) {
+                    renderSorterCell(sorterIndex + 1);
+                } else {
+                    renderSorterCell(sorterIndex);
+                }
+
+            } catch (err) {
+                alert(`❌ خطأ أثناء التصنيف: ${err.message}`);
+            }
+        });
+    });
+
+    btnSorterPrev.addEventListener('click', () => {
+        if (sorterIndex > 0) renderSorterCell(sorterIndex - 1);
+    });
+
+    btnSorterNext.addEventListener('click', () => {
+        if (sorterIndex < sorterCellsList.length - 1) renderSorterCell(sorterIndex + 1);
+    });
+
+    // Keyboard Shortcuts (Keys 1-6 and Arrow Keys)
+    document.addEventListener('keydown', (e) => {
+        if (sorterDashboard.style.display === 'none' || sorterCellsList.length === 0) return;
+
+        const categoryKeys = {
+            '1': 'Cracks',
+            '2': 'Ribbons',
+            '3': 'Misalignment',
+            '4': 'Impurity',
+            '5': 'Missing',
+            '6': 'other'
+        };
+
+        if (categoryKeys[e.key]) {
+            const cat = categoryKeys[e.key];
+            const btn = document.querySelector(`.btn-category[data-cat="${cat}"]`);
+            if (btn) btn.click();
+        } else if (e.key === 'ArrowRight') {
+            // Next cell (RTL)
+            if (sorterIndex < sorterCellsList.length - 1) renderSorterCell(sorterIndex + 1);
+        } else if (e.key === 'ArrowLeft') {
+            // Prev cell (RTL)
+            if (sorterIndex > 0) renderSorterCell(sorterIndex - 1);
+        }
+    });
+
+    // CREATIVE MOTIVATIONAL CELEBRATION SURPRISE MODAL
+    function triggerCelebrationSurprise() {
+        finalStatsGrid.innerHTML = '';
+        const catIcons = {
+            "Cracks": "fa-bolt-lightning text-red",
+            "Ribbons": "fa-grip-lines-vertical text-gold",
+            "Misalignment": "fa-arrows-rotate text-blue",
+            "Impurity": "fa-bahai text-green",
+            "Missing": "fa-square-minus text-purple",
+            "other": "fa-cubes-stacked"
+        };
+
+        Object.keys(sorterCategoryCounts).forEach(cat => {
+            const count = sorterCategoryCounts[cat];
+            const iconClass = catIcons[cat] || "fa-folder";
+            const item = document.createElement('div');
+            item.className = 'final-stat-item';
+            item.innerHTML = `
+                <div class="lbl"><i class="fa-solid ${iconClass}"></i> ${cat}</div>
+                <div class="val">${count.toLocaleString()}</div>
+            `;
+            finalStatsGrid.appendChild(item);
+        });
+
+        celebrationModal.style.display = 'flex';
+    }
+
+    btnCloseCelebration.addEventListener('click', () => {
+        celebrationModal.style.display = 'none';
+    });
+
+    celebrationModal.addEventListener('click', (e) => {
+        if (e.target === celebrationModal) celebrationModal.style.display = 'none';
     });
 
     // Helpers

@@ -3,8 +3,9 @@ import io
 import uuid
 import json
 import zipfile
+import shutil
 import cv2
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, BackgroundTasks
 from fastapi.responses import Response, FileResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -12,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from cropper_engine import SolarPanelCropperEngine
 from batch_cropper import process_batch_directory, find_panel_folders, parse_panel_info
 
-app = FastAPI(title="EL Solar Panel Cell Cropper API", version="2.2.0")
+app = FastAPI(title="EL Solar Panel Cell Cropper API", version="3.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -23,19 +24,142 @@ app.add_middleware(
 )
 
 SESSION_CACHE: Dict[str, Dict[str, Any]] = {}
+CATEGORIES = ["Cracks", "Ribbons", "Misalignment", "Impurity", "Missing", "other"]
 
 EXPORT_BASE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "exported_cells")
 os.makedirs(EXPORT_BASE_DIR, exist_ok=True)
 
+# ----------------- BAD CELLS SORTER API -----------------
+
+@app.post("/api/sorter/init")
+async def init_bad_cells_sorter(folder_path: str = Form(...)):
+    """
+    Initializes Bad Cells Sorter for 'all bad cells' folder:
+    1. Creates 6 defect subfolders: Cracks, Ribbons, Misalignment, Impurity, Missing, other.
+    2. Scans all PNG cell images in 'all bad cells' (root and subfolders).
+    3. Returns list of cell items with parsed panel ID, cell ID, current category, and counts.
+    """
+    folder_path = folder_path.strip('"\'')
+    if not os.path.exists(folder_path):
+        raise HTTPException(status_code=404, detail=f"المجلد غير موجود: {folder_path}")
+
+    # Create the 6 defect subfolders
+    category_counts = {}
+    for cat in CATEGORIES:
+        cat_dir = os.path.join(folder_path, cat)
+        os.makedirs(cat_dir, exist_ok=True)
+        category_counts[cat] = 0
+
+    cell_files_list = []
+    
+    # 1. Scan unclassified files in root of 'all bad cells'
+    for f in sorted(os.listdir(folder_path)):
+        full_p = os.path.join(folder_path, f)
+        if os.path.isfile(full_p) and f.lower().endswith(('.png', '.jpg', '.jpeg')):
+            filename_clean = f.replace('.png', '').replace('.jpg', '').replace('.jpeg', '')
+            parts = filename_clean.split('-')
+            cell_id = parts[-1] if len(parts) > 1 else filename_clean
+            panel_name = "-".join(parts[:-1]) if len(parts) > 1 else "Unknown"
+
+            cell_files_list.append({
+                "filename": f,
+                "full_path": full_p,
+                "panel_name": panel_name,
+                "cell_id": cell_id,
+                "category": "unclassified",
+                "rel_folder": "all bad cells/"
+            })
+
+    # 2. Scan files inside category subfolders
+    for cat in CATEGORIES:
+        cat_dir = os.path.join(folder_path, cat)
+        if os.path.exists(cat_dir):
+            cat_files = [f for f in sorted(os.listdir(cat_dir)) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+            category_counts[cat] = len(cat_files)
+            for f in cat_files:
+                full_p = os.path.join(cat_dir, f)
+                filename_clean = f.replace('.png', '').replace('.jpg', '').replace('.jpeg', '')
+                parts = filename_clean.split('-')
+                cell_id = parts[-1] if len(parts) > 1 else filename_clean
+                panel_name = "-".join(parts[:-1]) if len(parts) > 1 else "Unknown"
+
+                cell_files_list.append({
+                    "filename": f,
+                    "full_path": full_p,
+                    "panel_name": panel_name,
+                    "cell_id": cell_id,
+                    "category": cat,
+                    "rel_folder": f"all bad cells/{cat}/"
+                })
+
+    total_cells = len(cell_files_list)
+    sorted_cells = sum(category_counts.values())
+    remaining_cells = total_cells - sorted_cells
+
+    return JSONResponse({
+        "folder_path": folder_path,
+        "total_cells": total_cells,
+        "sorted_cells": sorted_cells,
+        "remaining_cells": remaining_cells,
+        "category_counts": category_counts,
+        "cells": cell_files_list
+    })
+
+@app.post("/api/sorter/move")
+async def move_cell_to_category(
+    folder_path: str = Form(...),
+    file_path: str = Form(...),
+    target_category: str = Form(...)
+):
+    """
+    Moves a cell PNG image to the target defect subfolder (Cracks, Ribbons, etc.).
+    Returns updated category counts and updated file path.
+    """
+    folder_path = folder_path.strip('"\'')
+    file_path = file_path.strip('"\'')
+    target_category = target_category.strip()
+
+    if target_category not in CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid category: {target_category}")
+
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
+
+    filename = os.path.basename(file_path)
+    target_dir = os.path.join(folder_path, target_category)
+    os.makedirs(target_dir, exist_ok=True)
+    new_full_path = os.path.join(target_dir, filename)
+
+    if file_path != new_full_path:
+        shutil.move(file_path, new_full_path)
+
+    # Recount categories
+    category_counts = {}
+    total_sorted = 0
+    for cat in CATEGORIES:
+        cat_dir = os.path.join(folder_path, cat)
+        if os.path.exists(cat_dir):
+            count = len([f for f in os.listdir(cat_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg'))])
+            category_counts[cat] = count
+            total_sorted += count
+        else:
+            category_counts[cat] = 0
+
+    return JSONResponse({
+        "status": "success",
+        "old_path": file_path,
+        "new_path": new_full_path,
+        "category": target_category,
+        "category_counts": category_counts,
+        "total_sorted": total_sorted
+    })
+
+# ----------------- ORIGINAL & BATCH API -----------------
+
 @app.post("/api/upload")
 async def upload_panel_image(file: UploadFile = File(...)):
-    """
-    Receives uploaded single panel image (.tif / .png / .jpg).
-    Passes it through process_tif.py & cropping engine and caches output.
-    """
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file selected.")
-
     try:
         contents = await file.read()
         image_bgr = SolarPanelCropperEngine.load_image(contents)
@@ -65,21 +189,14 @@ async def upload_panel_image(file: UploadFile = File(...)):
             "grid_overlay": result["grid_overlay"],
             "cells": cell_summary
         })
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Image processing error: {str(e)}")
 
 @app.post("/api/batch-process")
 async def batch_process_folder(folder_path: str = Form(...)):
-    """
-    Processes an entire local root folder containing Good_models / bad_models.
-    Crops panels, creates 'all cell' and 'bad cells' per panel, and aggregates
-    'all good cells' and 'all bad cells' at root level.
-    """
     folder_path = folder_path.strip('"\'')
     if not os.path.exists(folder_path):
         raise HTTPException(status_code=404, detail=f"المجلد غير موجود: {folder_path}")
-
     try:
         results = process_batch_directory(folder_path)
         return JSONResponse({
@@ -92,11 +209,9 @@ async def batch_process_folder(folder_path: str = Form(...)):
 
 @app.get("/api/scan-folder")
 async def scan_folder_info(folder_path: str):
-    """Scans a local folder and returns the count and list of panel folders discovered."""
     folder_path = folder_path.strip('"\'')
     if not os.path.exists(folder_path):
         raise HTTPException(status_code=404, detail=f"المجلد غير موجود: {folder_path}")
-
     panels = find_panel_folders(folder_path)
     return JSONResponse({
         "folder_path": folder_path,
@@ -106,10 +221,6 @@ async def scan_folder_info(folder_path: str):
 
 @app.get("/api/bad-panels-list")
 async def get_bad_panels_list(folder_path: str):
-    """
-    Returns the list and details of all defective panels found inside folder_path (bad_models).
-    Includes info.json metadata, list of bad cells, and panel directory paths.
-    """
     folder_path = folder_path.strip('"\'')
     if not os.path.exists(folder_path):
         raise HTTPException(status_code=404, detail=f"المجلد غير موجود: {folder_path}")
@@ -162,7 +273,6 @@ async def get_bad_panels_list(folder_path: str):
 
 @app.get("/api/panel-file-preview")
 async def preview_panel_file(path: str):
-    """Renders a panel TIF image file as PNG on the fly for browser preview."""
     path = path.strip('"\'')
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="File not found")
@@ -177,7 +287,6 @@ async def preview_panel_file(path: str):
 
 @app.get("/api/cell-file-preview")
 async def preview_cell_file(path: str):
-    """Serves a local cell PNG image file."""
     path = path.strip('"\'')
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="File not found")
@@ -185,33 +294,25 @@ async def preview_cell_file(path: str):
 
 @app.get("/api/panel-image/{session_id}")
 async def get_panel_image(session_id: str):
-    """Serves the full padded panel PNG image for visual preview."""
     if session_id not in SESSION_CACHE:
         raise HTTPException(status_code=404, detail="Session not found.")
-
     png_bytes = SESSION_CACHE[session_id]["result"]["full_panel_png"]
     return Response(content=png_bytes, media_type="image/png")
 
 @app.get("/api/cell-image/{session_id}/{cell_id}")
 async def get_cell_image(session_id: str, cell_id: str):
-    """Serves the 224x224 cropped PNG image for a specific cell (A1 to F24)."""
     cell_id = cell_id.upper()
     if session_id not in SESSION_CACHE:
         raise HTTPException(status_code=404, detail="Session not found.")
-
     cells = SESSION_CACHE[session_id]["result"]["cells"]
     if cell_id not in cells:
         raise HTTPException(status_code=404, detail=f"Cell {cell_id} not found.")
-
-    cell_png_bytes = cells[cell_id]["png_bytes"]
-    return Response(content=cell_png_bytes, media_type="image/png")
+    return Response(content=cells[cell_id]["png_bytes"], media_type="image/png")
 
 @app.get("/api/export/zip/{session_id}")
 async def export_zip(session_id: str):
-    """Generates and downloads a ZIP file containing all 144 cell PNG images named '[PanelName]-[CellID].png'."""
     if session_id not in SESSION_CACHE:
         raise HTTPException(status_code=404, detail="Session not found.")
-
     session_data = SESSION_CACHE[session_id]
     orig_filename = os.path.splitext(session_data["filename"])[0]
     cells = session_data["result"]["cells"]
@@ -232,10 +333,8 @@ async def export_zip(session_id: str):
 
 @app.post("/api/export/folder/{session_id}")
 async def export_to_folder(session_id: str, custom_path: str = Form(None)):
-    """Saves all 144 cell PNG images into a local workspace directory named '[PanelName]-[CellID].png'."""
     if session_id not in SESSION_CACHE:
         raise HTTPException(status_code=404, detail="Session not found.")
-
     session_data = SESSION_CACHE[session_id]
     orig_filename = os.path.splitext(session_data["filename"])[0]
     cells = session_data["result"]["cells"]
@@ -246,7 +345,6 @@ async def export_to_folder(session_id: str, custom_path: str = Form(None)):
         target_dir = os.path.join(EXPORT_BASE_DIR, orig_filename)
 
     os.makedirs(target_dir, exist_ok=True)
-
     saved_count = 0
     for cell_id, cell_data in cells.items():
         file_path = os.path.join(target_dir, f"{orig_filename}-{cell_id}.png")
