@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from cropper_engine import SolarPanelCropperEngine
 from batch_cropper import process_batch_directory, find_panel_folders, parse_panel_info
 
-app = FastAPI(title="EL Solar Panel Cell Cropper API", version="3.1.0")
+app = FastAPI(title="EL Solar Panel Cell Cropper API", version="3.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -33,6 +33,16 @@ for c in ['A', 'B', 'C', 'D', 'E', 'F']:
     for r in range(1, 25):
         ALL_POSITIONS.append(f"{c}{r}")
 
+def normalize_pos_id(cell_id: str) -> str:
+    """Normalizes cell IDs like A01 -> A1, B09 -> B9, F24 -> F24."""
+    cell_id = cell_id.strip()
+    match = re.match(r'^([A-F])(0?(\d+))$', cell_id, re.IGNORECASE)
+    if match:
+        col = match.group(1).upper()
+        num = int(match.group(3))
+        return f"{col}{num}"
+    return cell_id.upper()
+
 EXPORT_BASE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "exported_cells")
 os.makedirs(EXPORT_BASE_DIR, exist_ok=True)
 
@@ -44,8 +54,9 @@ async def init_good_cells_sorter(folder_path: str = Form(...)):
     Initializes Balanced Good Cells Filter for 'all good cells' folder:
     1. Creates subfolders '3168' and 'not good'.
     2. Scans all PNG cell images in 'all good cells' (root, 3168, not good).
-    3. Calculates accepted count per position (target 22 per position A1-F24).
-    4. Determines active position (A1 -> F24) and returns cell list and stats.
+    3. Groups files by normalized cell position (A1..A24, B1..B24, ..., F24).
+    4. Calculates accepted count per position (target 22 per position A1-F24).
+    5. Determines active position (A1 -> A2 -> ... -> F24) and returns cell queue.
     """
     folder_path = folder_path.strip('"\'')
     if not os.path.exists(folder_path):
@@ -56,7 +67,6 @@ async def init_good_cells_sorter(folder_path: str = Form(...)):
     os.makedirs(dir_3168, exist_ok=True)
     os.makedirs(dir_not_good, exist_ok=True)
 
-    # Initialize accepted count per position
     pos_accepted_counts = {p: 0 for p in ALL_POSITIONS}
     pos_rejected_counts = {p: 0 for p in ALL_POSITIONS}
 
@@ -64,7 +74,8 @@ async def init_good_cells_sorter(folder_path: str = Form(...)):
     for f in os.listdir(dir_3168):
         if f.lower().endswith(('.png', '.jpg', '.jpeg')):
             parts = f.replace('.png', '').replace('.jpg', '').replace('.jpeg', '').split('-')
-            cell_id = parts[-1] if len(parts) > 1 else ""
+            raw_id = parts[-1] if len(parts) > 1 else ""
+            cell_id = normalize_pos_id(raw_id)
             if cell_id in pos_accepted_counts:
                 pos_accepted_counts[cell_id] += 1
 
@@ -72,11 +83,11 @@ async def init_good_cells_sorter(folder_path: str = Form(...)):
     for f in os.listdir(dir_not_good):
         if f.lower().endswith(('.png', '.jpg', '.jpeg')):
             parts = f.replace('.png', '').replace('.jpg', '').replace('.jpeg', '').split('-')
-            cell_id = parts[-1] if len(parts) > 1 else ""
+            raw_id = parts[-1] if len(parts) > 1 else ""
+            cell_id = normalize_pos_id(raw_id)
             if cell_id in pos_rejected_counts:
                 pos_rejected_counts[cell_id] += 1
 
-    # Collect all available cell files grouped by position
     all_cells_list = []
 
     # 1. Unclassified files in root
@@ -84,7 +95,8 @@ async def init_good_cells_sorter(folder_path: str = Form(...)):
         full_p = os.path.join(folder_path, f)
         if os.path.isfile(full_p) and f.lower().endswith(('.png', '.jpg', '.jpeg')):
             parts = f.replace('.png', '').replace('.jpg', '').replace('.jpeg', '').split('-')
-            cell_id = parts[-1] if len(parts) > 1 else "A1"
+            raw_id = parts[-1] if len(parts) > 1 else "A1"
+            cell_id = normalize_pos_id(raw_id)
             panel_name = "-".join(parts[:-1]) if len(parts) > 1 else "Unknown"
 
             all_cells_list.append({
@@ -101,7 +113,8 @@ async def init_good_cells_sorter(folder_path: str = Form(...)):
         full_p = os.path.join(dir_3168, f)
         if os.path.isfile(full_p) and f.lower().endswith(('.png', '.jpg', '.jpeg')):
             parts = f.replace('.png', '').replace('.jpg', '').replace('.jpeg', '').split('-')
-            cell_id = parts[-1] if len(parts) > 1 else "A1"
+            raw_id = parts[-1] if len(parts) > 1 else "A1"
+            cell_id = normalize_pos_id(raw_id)
             panel_name = "-".join(parts[:-1]) if len(parts) > 1 else "Unknown"
 
             all_cells_list.append({
@@ -118,7 +131,8 @@ async def init_good_cells_sorter(folder_path: str = Form(...)):
         full_p = os.path.join(dir_not_good, f)
         if os.path.isfile(full_p) and f.lower().endswith(('.png', '.jpg', '.jpeg')):
             parts = f.replace('.png', '').replace('.jpg', '').replace('.jpeg', '').split('-')
-            cell_id = parts[-1] if len(parts) > 1 else "A1"
+            raw_id = parts[-1] if len(parts) > 1 else "A1"
+            cell_id = normalize_pos_id(raw_id)
             panel_name = "-".join(parts[:-1]) if len(parts) > 1 else "Unknown"
 
             all_cells_list.append({
@@ -133,7 +147,7 @@ async def init_good_cells_sorter(folder_path: str = Form(...)):
     total_accepted = sum(pos_accepted_counts.values())
     total_rejected = sum(pos_rejected_counts.values())
 
-    # Determine active position (first position where accepted < 22)
+    # Determine active position sequentially (first position where accepted < 22)
     active_position = ALL_POSITIONS[0]
     for pos in ALL_POSITIONS:
         if pos_accepted_counts[pos] < 22:
@@ -162,7 +176,7 @@ async def good_cells_sorter_action(
 ):
     """
     Moves cell image to '3168' if accepted or 'not good' if rejected.
-    Returns updated position counts and progress.
+    Returns updated position counts and active position.
     """
     folder_path = folder_path.strip('"\'')
     file_path = file_path.strip('"\'')
@@ -183,7 +197,6 @@ async def good_cells_sorter_action(
     if file_path != new_full_path:
         shutil.move(file_path, new_full_path)
 
-    # Recount
     dir_3168 = os.path.join(folder_path, "3168")
     dir_not_good = os.path.join(folder_path, "not good")
 
@@ -194,7 +207,8 @@ async def good_cells_sorter_action(
         for f in os.listdir(dir_3168):
             if f.lower().endswith(('.png', '.jpg', '.jpeg')):
                 parts = f.replace('.png', '').replace('.jpg', '').replace('.jpeg', '').split('-')
-                cell_id = parts[-1] if len(parts) > 1 else ""
+                raw_id = parts[-1] if len(parts) > 1 else ""
+                cell_id = normalize_pos_id(raw_id)
                 if cell_id in pos_accepted_counts:
                     pos_accepted_counts[cell_id] += 1
 
@@ -202,7 +216,8 @@ async def good_cells_sorter_action(
         for f in os.listdir(dir_not_good):
             if f.lower().endswith(('.png', '.jpg', '.jpeg')):
                 parts = f.replace('.png', '').replace('.jpg', '').replace('.jpeg', '').split('-')
-                cell_id = parts[-1] if len(parts) > 1 else ""
+                raw_id = parts[-1] if len(parts) > 1 else ""
+                cell_id = normalize_pos_id(raw_id)
                 if cell_id in pos_rejected_counts:
                     pos_rejected_counts[cell_id] += 1
 

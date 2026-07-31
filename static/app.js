@@ -24,11 +24,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // State Variables - Balanced Good Cells Sorter (Tab 4: 3168 & not good)
     let goodFolderPath = "";
     let goodCellsList = [];
-    let goodCellIndex = 0;
     let goodActivePosition = "A1";
     let goodPosAcceptedCounts = {};
     let goodPosRejectedCounts = {};
     let allPositions = [];
+    let goodPosSubIndex = 0; // Index within the active position's queue
 
     // DOM Elements - Mode Switching
     const tabSingleMode = document.getElementById('tab-single-mode');
@@ -669,8 +669,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             buildPositionMapGrid();
             goodSorterDashboard.style.display = 'flex';
-            goodCellIndex = 0;
-            renderGoodSorterCell(0);
+            goodPosSubIndex = 0;
+            renderGoodSorterCell();
 
             alert(`✅ تم تجهيز الفرز المتوازن بنجاح!\n\n📁 المجلدان 3168 و not good جاهزان.\n🎯 الموقع النشط الحالي: ${goodActivePosition}`);
 
@@ -683,7 +683,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function buildPositionMapGrid() {
         positionMapGrid.innerHTML = '';
-        allPositions.forEach((pos, idx) => {
+        allPositions.forEach((pos) => {
             const btn = document.createElement('div');
             btn.className = 'pos-map-btn';
             btn.dataset.pos = pos;
@@ -693,11 +693,8 @@ document.addEventListener('DOMContentLoaded', () => {
             `;
             btn.addEventListener('click', () => {
                 goodActivePosition = pos;
-                // Find first cell matching this position
-                const matchIdx = goodCellsList.findIndex(c => c.cell_id === pos);
-                if (matchIdx !== -1) {
-                    renderGoodSorterCell(matchIdx);
-                }
+                goodPosSubIndex = 0;
+                renderGoodSorterCell();
             });
             positionMapGrid.appendChild(btn);
         });
@@ -717,21 +714,70 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function renderGoodSorterCell(index) {
-        if (index < 0 || index >= goodCellsList.length) return;
-        goodCellIndex = index;
-        const cell = goodCellsList[index];
+    // Returns unclassified cells queue specifically matching current active position
+    function getActivePositionQueue() {
+        const queue = goodCellsList.filter(c => c.cell_id === goodActivePosition && c.status === 'unclassified');
+        if (queue.length > 0) return queue;
+        // Fallback: return any cells for that position (even if evaluated, for viewing)
+        return goodCellsList.filter(c => c.cell_id === goodActivePosition);
+    }
 
-        // 1. Update Active Position
+    function renderGoodSorterCell() {
+        // Check if current active position reached 22 target
+        const currentPosAccepted = goodPosAcceptedCounts[goodActivePosition] || 0;
+        if (currentPosAccepted >= 22) {
+            // Find next position in ALL_POSITIONS that needs cells (< 22)
+            const currentIdx = allPositions.indexOf(goodActivePosition);
+            for (let i = 0; i < allPositions.length; i++) {
+                const nextPos = allPositions[(currentIdx + i) % allPositions.length];
+                if ((goodPosAcceptedCounts[nextPos] || 0) < 22) {
+                    goodActivePosition = nextPos;
+                    goodPosSubIndex = 0;
+                    break;
+                }
+            }
+        }
+
+        const posQueue = getActivePositionQueue();
+
+        if (posQueue.length === 0) {
+            // No unclassified cells left for this position, move to next incomplete position
+            let foundNext = false;
+            for (let pos of allPositions) {
+                if ((goodPosAcceptedCounts[pos] || 0) < 22) {
+                    const testQueue = goodCellsList.filter(c => c.cell_id === pos && c.status === 'unclassified');
+                    if (testQueue.length > 0) {
+                        goodActivePosition = pos;
+                        goodPosSubIndex = 0;
+                        foundNext = true;
+                        break;
+                    }
+                }
+            }
+            if (!foundNext && Object.values(goodPosAcceptedCounts).reduce((a, b) => a + b, 0) >= 3168) {
+                triggerCelebrationSurprise();
+                return;
+            }
+        }
+
+        const activeQueue = getActivePositionQueue();
+        if (activeQueue.length === 0) return;
+
+        if (goodPosSubIndex < 0) goodPosSubIndex = 0;
+        if (goodPosSubIndex >= activeQueue.length) goodPosSubIndex = activeQueue.length - 1;
+
+        const cell = activeQueue[goodPosSubIndex];
+
+        // 1. Update Active Position Header Badge
         const activePosIdx = allPositions.indexOf(goodActivePosition) + 1;
         goodActivePosBadge.innerText = `الموقع الحالي: ${goodActivePosition} (${activePosIdx} من 144)`;
 
         // 2. Update Header Progress Counters
-        const currentPosAccepted = goodPosAcceptedCounts[goodActivePosition] || 0;
+        const acceptedForPos = goodPosAcceptedCounts[goodActivePosition] || 0;
         const totalAccepted = Object.values(goodPosAcceptedCounts).reduce((a, b) => a + b, 0);
         const totalRejected = Object.values(goodPosRejectedCounts).reduce((a, b) => a + b, 0);
 
-        goodPosAcceptedCount.innerText = `${currentPosAccepted} / 22`;
+        goodPosAcceptedCount.innerText = `${acceptedForPos} / 22`;
         goodTotalAcceptedCount.innerText = `${totalAccepted} / 3168`;
         goodTotalRejectedCount.innerText = `${totalRejected}`;
 
@@ -744,7 +790,7 @@ document.addEventListener('DOMContentLoaded', () => {
         goodCellImg.onload = () => goodImgLoader.style.display = 'none';
         goodCellImg.onerror = () => goodImgLoader.style.display = 'none';
 
-        goodImgBadge.innerText = cell.cell_id;
+        goodImgBadge.innerText = `${cell.cell_id} (${goodPosSubIndex + 1}/${activeQueue.length})`;
 
         // Update Position Map Grid
         updatePositionMapGrid();
@@ -756,8 +802,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function handleGoodCellAction(action) {
-        if (goodCellsList.length === 0 || goodCellIndex >= goodCellsList.length) return;
-        const currentCell = goodCellsList[goodCellIndex];
+        const activeQueue = getActivePositionQueue();
+        if (activeQueue.length === 0 || goodPosSubIndex >= activeQueue.length) return;
+        const currentCell = activeQueue[goodPosSubIndex];
 
         try {
             const formData = new FormData();
@@ -781,12 +828,8 @@ document.addEventListener('DOMContentLoaded', () => {
             goodPosRejectedCounts = data.pos_rejected_counts;
             goodActivePosition = data.active_position;
 
-            // Move to next cell automatically
-            if (goodCellIndex < goodCellsList.length - 1) {
-                renderGoodSorterCell(goodCellIndex + 1);
-            } else {
-                renderGoodSorterCell(goodCellIndex);
-            }
+            // Render next cell for active position
+            renderGoodSorterCell();
 
         } catch (err) {
             alert(`❌ خطأ أثناء الفرز: ${err.message}`);
@@ -797,11 +840,18 @@ document.addEventListener('DOMContentLoaded', () => {
     btnGoodReject.addEventListener('click', () => handleGoodCellAction('rejected'));
 
     btnGoodPrev.addEventListener('click', () => {
-        if (goodCellIndex > 0) renderGoodSorterCell(goodCellIndex - 1);
+        if (goodPosSubIndex > 0) {
+            goodPosSubIndex--;
+            renderGoodSorterCell();
+        }
     });
 
     btnGoodNext.addEventListener('click', () => {
-        if (goodCellIndex < goodCellsList.length - 1) renderGoodSorterCell(goodCellIndex + 1);
+        const activeQueue = getActivePositionQueue();
+        if (goodPosSubIndex < activeQueue.length - 1) {
+            goodPosSubIndex++;
+            renderGoodSorterCell();
+        }
     });
 
     // ---------------- BAD CELLS CLASSIFIER & SORTER (TAB 3) ----------------
@@ -946,9 +996,9 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (e.key === '2' || e.key === 'Backspace') {
                 btnGoodReject.click();
             } else if (e.key === 'ArrowRight') {
-                if (goodCellIndex > 0) renderGoodSorterCell(goodCellIndex - 1);
+                btnGoodPrev.click();
             } else if (e.key === 'ArrowLeft') {
-                if (goodCellIndex < goodCellsList.length - 1) renderGoodSorterCell(goodCellIndex + 1);
+                btnGoodNext.click();
             }
             return;
         }
